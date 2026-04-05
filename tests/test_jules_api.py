@@ -121,6 +121,134 @@ class JulesApiTests(unittest.TestCase):
         self.assertIn("merge_ready=no", rendered)
         self.assertIn("ready=yes", rendered)
 
+    def test_build_close_message_uses_override_aware_command(self) -> None:
+        message = jules_api.build_close_message(
+            "sessions/123",
+            {"title": "Cleanup test", "state": "COMPLETED"},
+            {
+                "mergedPullRequests": [{"number": 7, "title": "Fix", "url": "https://example.com/pr/7", "mergedAt": "2026-04-05T10:00:00Z"}],
+                "allMerged": False,
+            },
+            recommended_command=(
+                "python3 scripts/jules_api.py close-merged-session "
+                "--session sessions/123 --allow-caution-close --confirm-close CLOSE_MERGED_SESSION"
+            ),
+        )
+
+        self.assertIn("--allow-caution-close", message)
+
+    def test_list_sessions_collects_all_pages(self) -> None:
+        output = io.StringIO()
+        args = argparse.Namespace(page_size=2, page_token=None)
+
+        with mock.patch.object(
+            jules_api,
+            "collect_paginated_resources",
+            return_value=([{"name": "sessions/1"}, {"name": "sessions/2"}], None),
+        ) as collector:
+            with redirect_stdout(output):
+                jules_api.list_sessions(args)
+
+        collector.assert_called_once_with("/sessions", page_size=2, resource_key="sessions", page_token=None)
+        self.assertIn('"name": "sessions/2"', output.getvalue())
+
+    def test_list_activities_collects_all_pages(self) -> None:
+        output = io.StringIO()
+        args = argparse.Namespace(session="123", page_size=3, page_token=None)
+
+        with mock.patch.object(
+            jules_api,
+            "collect_session_activities",
+            return_value=([{"name": "sessions/123/activities/1"}, {"name": "sessions/123/activities/2"}], None),
+        ) as collector:
+            with redirect_stdout(output):
+                jules_api.list_activities(args)
+
+        collector.assert_called_once_with("sessions/123", page_size=3, page_token=None)
+        self.assertIn('"name": "sessions/123/activities/2"', output.getvalue())
+
+    def test_summary_uses_true_latest_activity_across_pages(self) -> None:
+        args = argparse.Namespace(session="123", page_size=10, recent_count=2, include_merge_status=False)
+        output = io.StringIO()
+        session = {
+            "name": "sessions/123",
+            "id": "123",
+            "title": "Summary test",
+            "state": "IN_PROGRESS",
+            "url": "https://example.com/session/123",
+            "createTime": "2026-04-05T08:00:00Z",
+            "updateTime": "2026-04-05T10:00:00Z",
+            "outputs": [],
+        }
+        activities = [
+            {"name": "a2", "createTime": "2026-04-05T10:00:00Z", "description": "newest", "agentMessaged": {"agentMessage": "new"}},
+            {"name": "a1", "createTime": "2026-04-05T09:00:00Z", "description": "older", "agentMessaged": {"agentMessage": "old"}},
+        ]
+
+        with mock.patch.object(jules_api, "api_request", return_value=session) as api_request:
+            with mock.patch.object(jules_api, "collect_session_activities", return_value=(activities, None)) as collector:
+                with redirect_stdout(output):
+                    jules_api.summarize_session(args)
+
+        api_request.assert_called_once_with("GET", "/sessions/123")
+        collector.assert_called_once_with("sessions/123", page_size=10)
+        rendered = output.getvalue()
+        self.assertIn('"name": "a2"', rendered)
+
+    def test_export_summary_uses_paginated_activities(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            kind="summary",
+            page_size=10,
+            recent_count=2,
+            include_merge_status=False,
+            output=None,
+        )
+        output = io.StringIO()
+        session = {
+            "name": "sessions/123",
+            "id": "123",
+            "title": "Export test",
+            "state": "IN_PROGRESS",
+            "url": "https://example.com/session/123",
+            "createTime": "2026-04-05T08:00:00Z",
+            "updateTime": "2026-04-05T10:00:00Z",
+            "outputs": [],
+        }
+        activities = [
+            {"name": "a2", "createTime": "2026-04-05T10:00:00Z", "description": "newest", "agentMessaged": {"agentMessage": "new"}},
+            {"name": "a1", "createTime": "2026-04-05T09:00:00Z", "description": "older", "agentMessaged": {"agentMessage": "old"}},
+        ]
+
+        with mock.patch.object(jules_api, "api_request", return_value=session) as api_request:
+            with mock.patch.object(jules_api, "collect_session_activities", return_value=(activities, None)) as collector:
+                with redirect_stdout(output):
+                    jules_api.export_session(args)
+
+        api_request.assert_called_once_with("GET", "/sessions/123")
+        collector.assert_called_once_with("sessions/123", page_size=10)
+        rendered = output.getvalue()
+        self.assertIn('"name": "a2"', rendered)
+
+    def test_export_activities_collects_all_pages(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            kind="activities",
+            page_size=10,
+            recent_count=2,
+            include_merge_status=False,
+            output=None,
+        )
+        output = io.StringIO()
+        activities = [{"name": "a1"}, {"name": "a2"}]
+
+        with mock.patch.object(jules_api, "collect_session_activities", return_value=(activities, None)) as collector:
+            with redirect_stdout(output):
+                jules_api.export_session(args)
+
+        collector.assert_called_once_with("sessions/123", page_size=10)
+        self.assertIn('"name": "a2"', output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

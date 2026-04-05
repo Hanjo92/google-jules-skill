@@ -186,6 +186,20 @@ def collect_paginated_resources(
     return resources, next_token
 
 
+def collect_session_activities(
+    session_name: str,
+    *,
+    page_size: int,
+    page_token: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    return collect_paginated_resources(
+        f"/{session_name}/activities",
+        page_size=page_size,
+        resource_key="activities",
+        page_token=page_token,
+    )
+
+
 def print_json(data: Any) -> None:
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
@@ -206,6 +220,19 @@ def parse_rfc3339(value: str | None) -> dt.datetime | None:
 
 def utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+
+def order_activities(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    minimum = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+
+    def sort_key(item: tuple[int, dict[str, Any]]) -> tuple[dt.datetime, int]:
+        index, activity = item
+        created_at = parse_rfc3339(activity.get("createTime"))
+        if created_at is None:
+            return minimum, index
+        return created_at.astimezone(dt.timezone.utc), index
+
+    return [activity for _, activity in sorted(enumerate(activities), key=sort_key)]
 
 
 def extract_repo_name(session: dict[str, Any]) -> str | None:
@@ -663,12 +690,13 @@ def close_ready_report(args: argparse.Namespace) -> None:
 
         brief = summarize_session_brief(session)
         session_name = normalize_session_name(session.get("name", ""))
+        recommended_command = build_close_command(session_name)
         item = {
             **brief,
             "closeReadiness": close_readiness,
             "mergeStatus": report,
-            "message": build_close_message(session_name, brief, report),
-            "recommendedCommand": build_close_command(session_name),
+            "message": build_close_message(session_name, brief, report, recommended_command=recommended_command),
+            "recommendedCommand": recommended_command,
         }
 
         if close_readiness["closeReady"] and (not args.require_all_merged or report["allMerged"]):
@@ -712,16 +740,17 @@ def notify_close_plan(args: argparse.Namespace) -> None:
     if close_readiness["unknownPullRequestCount"] > 0 and not args.allow_unknown_pr_status:
         fail("Some pull requests have unknown GitHub status. Refusing to build a close plan unless --allow-unknown-pr-status is provided.")
 
+    recommended_command = build_close_command(
+        session_name,
+        allow_caution_close=args.allow_caution_close,
+        allow_unknown_pr_status=args.allow_unknown_pr_status,
+    )
     payload = {
         "session": brief,
         "mergeStatus": report,
         "closeReadiness": close_readiness,
-        "message": build_close_message(session_name, brief, report),
-        "recommendedCommand": build_close_command(
-            session_name,
-            allow_caution_close=args.allow_caution_close,
-            allow_unknown_pr_status=args.allow_unknown_pr_status,
-        ),
+        "message": build_close_message(session_name, brief, report, recommended_command=recommended_command),
+        "recommendedCommand": recommended_command,
     }
     if args.markdown:
         print_text(payload["message"])
@@ -772,8 +801,13 @@ def repo_to_source(args: argparse.Namespace) -> None:
 
 
 def list_sessions(args: argparse.Namespace) -> None:
-    response = api_request("GET", "/sessions", query={"pageSize": args.page_size, "pageToken": args.page_token})
-    print_json(response)
+    sessions, next_page_token = collect_paginated_resources(
+        "/sessions",
+        page_size=args.page_size,
+        resource_key="sessions",
+        page_token=args.page_token,
+    )
+    print_json({"sessions": sessions, "nextPageToken": next_page_token})
 
 
 def delete_session(args: argparse.Namespace) -> None:
@@ -818,12 +852,12 @@ def approve_plan(args: argparse.Namespace) -> None:
 
 
 def list_activities(args: argparse.Namespace) -> None:
-    response = api_request(
-        "GET",
-        f"/{normalize_session_name(args.session)}/activities",
-        query={"pageSize": args.page_size, "pageToken": args.page_token},
+    activities, next_page_token = collect_session_activities(
+        normalize_session_name(args.session),
+        page_size=args.page_size,
+        page_token=args.page_token,
     )
-    print_json(response)
+    print_json({"activities": activities, "nextPageToken": next_page_token})
 
 
 def get_activity(args: argparse.Namespace) -> None:
@@ -1031,7 +1065,13 @@ def build_merge_report(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_close_message(session_name: str, brief: dict[str, Any], report: dict[str, Any]) -> str:
+def build_close_message(
+    session_name: str,
+    brief: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    recommended_command: str | None = None,
+) -> str:
     lines = [
         f"Jules session `{session_name}` is a close candidate.",
         f"Title: {brief.get('title') or '(untitled)'}",
@@ -1049,7 +1089,7 @@ def build_close_message(session_name: str, brief: dict[str, Any], report: dict[s
     else:
         lines.append("Some PRs are merged, but not all discovered PRs are merged yet.")
 
-    lines.append(f"If you want to close it, confirm and then run: {build_close_command(session_name)}")
+    lines.append(f"If you want to close it, confirm and then run: {recommended_command or build_close_command(session_name)}")
     return "\n".join(lines)
 
 
@@ -1129,14 +1169,17 @@ def summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-def summarize_session(args: argparse.Namespace) -> None:
-    session_name = normalize_session_name(args.session)
-    session = api_request("GET", f"/{session_name}")
-    activity_response = api_request("GET", f"/{session_name}/activities", query={"pageSize": args.page_size})
-    activities = activity_response.get("activities", [])
-    latest = activities[-1] if activities else None
+def build_session_summary_payload(
+    session: dict[str, Any],
+    activities: list[dict[str, Any]],
+    *,
+    recent_count: int,
+    include_merge_status: bool = False,
+) -> dict[str, Any]:
+    ordered_activities = order_activities(activities)
+    latest = ordered_activities[-1] if ordered_activities else None
 
-    summary = {
+    payload = {
         "session": {
             "name": session.get("name"),
             "id": session.get("id"),
@@ -1148,13 +1191,27 @@ def summarize_session(args: argparse.Namespace) -> None:
             "updateTime": session.get("updateTime"),
             "outputs": session.get("outputs", []),
         },
-        "activityCount": len(activities),
+        "activityCount": len(ordered_activities),
         "latestActivity": summarize_activity(latest) if latest else None,
-        "recentActivities": [summarize_activity(item) for item in activities[-args.recent_count :]],
+        "recentActivities": [summarize_activity(item) for item in ordered_activities[-recent_count:]],
     }
-    if args.include_merge_status:
-        summary["mergeStatus"] = build_merge_report(session)
-    print_json(summary)
+    if include_merge_status:
+        payload["mergeStatus"] = build_merge_report(session)
+    return payload
+
+
+def summarize_session(args: argparse.Namespace) -> None:
+    session_name = normalize_session_name(args.session)
+    session = api_request("GET", f"/{session_name}")
+    activities, _ = collect_session_activities(session_name, page_size=args.page_size)
+    print_json(
+        build_session_summary_payload(
+            session,
+            activities,
+            recent_count=args.recent_count,
+            include_merge_status=args.include_merge_status,
+        )
+    )
 
 
 def resume_session(args: argparse.Namespace) -> None:
@@ -1196,23 +1253,20 @@ def export_session(args: argparse.Namespace) -> None:
     if args.kind == "session":
         payload = api_request("GET", f"/{session_name}")
     elif args.kind == "activities":
-        payload = api_request("GET", f"/{session_name}/activities", query={"pageSize": args.page_size})
+        activities, next_page_token = collect_session_activities(session_name, page_size=args.page_size)
+        payload = {"activities": activities, "nextPageToken": next_page_token}
     elif args.kind == "outputs":
         session = api_request("GET", f"/{session_name}")
         payload = {"session": session_name, "outputs": session.get("outputs", [])}
     else:
         session = api_request("GET", f"/{session_name}")
-        activity_response = api_request("GET", f"/{session_name}/activities", query={"pageSize": args.page_size})
-        activities = activity_response.get("activities", [])
-        latest = activities[-1] if activities else None
-        payload = {
-            "session": session,
-            "activityCount": len(activities),
-            "latestActivity": summarize_activity(latest) if latest else None,
-            "recentActivities": [summarize_activity(item) for item in activities[-args.recent_count :]],
-        }
-        if args.include_merge_status:
-            payload["mergeStatus"] = build_merge_report(session)
+        activities, _ = collect_session_activities(session_name, page_size=args.page_size)
+        payload = build_session_summary_payload(
+            session,
+            activities,
+            recent_count=args.recent_count,
+            include_merge_status=args.include_merge_status,
+        )
 
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
     if args.output:
