@@ -12,7 +12,7 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
 1. Verify one control path is available.
    - API path: put `JULES_API_KEY` in a `.env` file from `https://jules.google.com/settings`.
    - CLI path: install `@google/jules`, then run `jules login`.
-   - API helper health check: run `python3 scripts/jules_api.py doctor --compact`.
+   - API/CLI health check: run `python3 scripts/jules_api.py doctor --compact`.
    - Merge-aware reporting health check: run `python3 scripts/jules_api.py gh-auth-check --compact`.
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
@@ -85,6 +85,11 @@ python3 scripts/jules_api.py request-pr-rework --session sessions/1234567890 --m
 
 python3 scripts/jules_api.py summary --session sessions/1234567890
 ```
+
+Notes:
+
+- `doctor --compact` now separates `api_ready`, `cli_ready`, and `merge_ready`.
+- Aggregated list/report commands collect all pages by default. `--page-token` is a starting point for aggregation, not a single-page mode.
 
 ### CLI workflow
 

@@ -274,16 +274,46 @@ def collect_jules_cli_status() -> dict[str, Any]:
     payload: dict[str, Any] = {
         "installed": bool(cli_path),
         "path": cli_path,
+        "authenticated": None,
+        "authStatus": "not_installed" if not cli_path else "unknown",
+        "ready": False,
     }
     if not cli_path:
         return payload
 
     try:
-        result = subprocess.run(["jules", "--version"], capture_output=True, text=True, check=True)
+        result = subprocess.run(["jules", "version"], capture_output=True, text=True, check=True, timeout=15)
         payload["version"] = (result.stdout or result.stderr).strip()
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         payload["versionError"] = (exc.stderr or exc.stdout).strip()
-    return payload
+
+    try:
+        probe = subprocess.run(
+            ["jules", "remote", "list", "--repo"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        payload["authenticated"] = True
+        payload["authStatus"] = "authenticated"
+        payload["authProbeOutput"] = (probe.stdout or probe.stderr).strip()
+        payload["ready"] = True
+        return payload
+    except subprocess.TimeoutExpired:
+        payload["authStatus"] = "unknown"
+        payload["authProbeError"] = "Timed out while checking Jules CLI authentication."
+        return payload
+    except subprocess.CalledProcessError as exc:
+        combined = " ".join(part for part in [(exc.stdout or "").strip(), (exc.stderr or "").strip()] if part).strip()
+        normalized = combined.lower()
+        if any(token in normalized for token in ["login", "log in", "sign in", "authenticate", "authentication", "not logged", "unauthorized"]):
+            payload["authenticated"] = False
+            payload["authStatus"] = "not_authenticated"
+        else:
+            payload["authStatus"] = "unknown"
+        payload["authProbeError"] = combined or "Failed to determine Jules CLI authentication state."
+        return payload
 
 
 def format_session_line(session: dict[str, Any]) -> str:
@@ -442,6 +472,28 @@ def build_close_command(
     return " ".join(parts)
 
 
+def build_aggregation_metadata(*, page_size: int, start_page_token: str | None) -> dict[str, Any]:
+    return {
+        "mode": "aggregate",
+        "pageSize": page_size,
+        "startPageToken": start_page_token,
+        "fullyCollected": True,
+    }
+
+
+def add_aggregate_pagination_arguments(parser: argparse.ArgumentParser, *, default_page_size: int) -> None:
+    parser.add_argument(
+        "--page-size",
+        type=int,
+        default=default_page_size,
+        help="API page size for each underlying request while aggregating all pages.",
+    )
+    parser.add_argument(
+        "--page-token",
+        help="Optional start token. The command will aggregate pages from this token onward.",
+    )
+
+
 def list_active_sessions(args: argparse.Namespace) -> None:
     sessions, next_page_token = collect_paginated_resources(
         "/sessions",
@@ -454,7 +506,13 @@ def list_active_sessions(args: argparse.Namespace) -> None:
         for session in sessions
         if session.get("state") in OPEN_STATES and session_matches_repo_filter(session, args.repo_filter)
     ]
-    print_json({"sessions": active_sessions, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "sessions": active_sessions,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def stale_session_report(args: argparse.Namespace) -> None:
@@ -499,6 +557,7 @@ def stale_session_report(args: argparse.Namespace) -> None:
                 "staleSessionCount": len(results),
             },
             "sessions": results,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
             "nextPageToken": next_page_token,
         }
     )
@@ -538,7 +597,13 @@ def list_unmerged_sessions(args: argparse.Namespace) -> None:
             }
         )
 
-    print_json({"sessions": results, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "sessions": results,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def list_merged_sessions(args: argparse.Namespace) -> None:
@@ -570,7 +635,13 @@ def list_merged_sessions(args: argparse.Namespace) -> None:
             }
         )
 
-    print_json({"sessions": results, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "sessions": results,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def cleanup_report(args: argparse.Namespace) -> None:
@@ -659,6 +730,7 @@ def cleanup_report(args: argparse.Namespace) -> None:
         "cautionCandidates": caution_sessions,
         "unmergedSessions": unmerged_sessions,
         "withoutPullRequest": without_pr_sessions,
+        "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
         "nextPageToken": next_page_token,
     }
     emit_output(
@@ -711,6 +783,7 @@ def close_ready_report(args: argparse.Namespace) -> None:
         },
         "candidates": candidates,
         "cautionCandidates": caution_candidates,
+        "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
         "nextPageToken": next_page_token,
     }
     emit_output(
@@ -766,7 +839,13 @@ def list_sources(args: argparse.Namespace) -> None:
         page_token=args.page_token,
         extra_query={"filter": args.filter},
     )
-    print_json({"sources": sources, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "sources": sources,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def repo_to_source(args: argparse.Namespace) -> None:
@@ -788,6 +867,7 @@ def repo_to_source(args: argparse.Namespace) -> None:
         "repo": repo,
         "matches": matches,
         "count": len(matches),
+        "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
         "nextPageToken": next_page_token,
     }
 
@@ -807,7 +887,13 @@ def list_sessions(args: argparse.Namespace) -> None:
         resource_key="sessions",
         page_token=args.page_token,
     )
-    print_json({"sessions": sessions, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "sessions": sessions,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def delete_session(args: argparse.Namespace) -> None:
@@ -857,7 +943,13 @@ def list_activities(args: argparse.Namespace) -> None:
         page_size=args.page_size,
         page_token=args.page_token,
     )
-    print_json({"activities": activities, "nextPageToken": next_page_token})
+    print_json(
+        {
+            "activities": activities,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=args.page_token),
+            "nextPageToken": next_page_token,
+        }
+    )
 
 
 def get_activity(args: argparse.Namespace) -> None:
@@ -1254,7 +1346,11 @@ def export_session(args: argparse.Namespace) -> None:
         payload = api_request("GET", f"/{session_name}")
     elif args.kind == "activities":
         activities, next_page_token = collect_session_activities(session_name, page_size=args.page_size)
-        payload = {"activities": activities, "nextPageToken": next_page_token}
+        payload = {
+            "activities": activities,
+            "pagination": build_aggregation_metadata(page_size=args.page_size, start_page_token=None),
+            "nextPageToken": next_page_token,
+        }
     elif args.kind == "outputs":
         session = api_request("GET", f"/{session_name}")
         payload = {"session": session_name, "outputs": session.get("outputs", [])}
@@ -1383,6 +1479,8 @@ def doctor(args: argparse.Namespace) -> None:
     api_key_present = bool(os.environ.get("JULES_API_KEY", "").strip())
     gh_status = collect_gh_auth_status()
     jules_status = collect_jules_cli_status()
+    api_ready = api_key_present
+    cli_ready = bool(jules_status.get("ready"))
     merge_ready = bool(gh_status.get("installed") and gh_status.get("authenticated"))
 
     payload = {
@@ -1395,10 +1493,12 @@ def doctor(args: argparse.Namespace) -> None:
         },
         "gh": gh_status,
         "julesCli": jules_status,
+        "apiReady": api_ready,
+        "cliReady": cli_ready,
         "mergeReady": merge_ready,
     }
 
-    payload["ready"] = bool(api_key_present)
+    payload["ready"] = bool(api_ready or cli_ready)
 
     if args.compact:
         print_text(
@@ -1406,10 +1506,13 @@ def doctor(args: argparse.Namespace) -> None:
                 [
                     f"dotenv={'yes' if payload['dotenv']['found'] else 'no'}",
                     f"api_key={'yes' if api_key_present else 'no'}",
+                    f"api_ready={'yes' if api_ready else 'no'}",
                     f"gh={'yes' if gh_status.get('installed') else 'no'}",
                     f"gh_auth={'yes' if gh_status.get('authenticated') else 'no'}",
                     f"merge_ready={'yes' if merge_ready else 'no'}",
                     f"jules_cli={'yes' if jules_status.get('installed') else 'no'}",
+                    f"jules_cli_auth={jules_status.get('authStatus', 'unknown')}",
+                    f"cli_ready={'yes' if cli_ready else 'no'}",
                     f"ready={'yes' if payload['ready'] else 'no'}",
                 ]
             )
@@ -1423,8 +1526,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_active_sessions_parser = subparsers.add_parser("list-active-sessions", help="List non-terminal Jules sessions.")
-    list_active_sessions_parser.add_argument("--page-size", type=int, default=50)
-    list_active_sessions_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_active_sessions_parser, default_page_size=50)
     list_active_sessions_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     list_active_sessions_parser.add_argument(
         "--include-merge-status",
@@ -1437,8 +1539,7 @@ def build_parser() -> argparse.ArgumentParser:
         "stale-session-report",
         help="List open Jules sessions that have not been updated recently.",
     )
-    stale_session_report_parser.add_argument("--page-size", type=int, default=50)
-    stale_session_report_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(stale_session_report_parser, default_page_size=50)
     stale_session_report_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     stale_session_report_parser.add_argument(
         "--stale-after-hours",
@@ -1457,8 +1558,7 @@ def build_parser() -> argparse.ArgumentParser:
         "list-unmerged-sessions",
         help="List sessions whose discovered PR outputs are not merged yet.",
     )
-    list_unmerged_sessions_parser.add_argument("--page-size", type=int, default=50)
-    list_unmerged_sessions_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_unmerged_sessions_parser, default_page_size=50)
     list_unmerged_sessions_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     list_unmerged_sessions_parser.add_argument(
         "--include-without-pr",
@@ -1471,8 +1571,7 @@ def build_parser() -> argparse.ArgumentParser:
         "list-merged-sessions",
         help="List sessions whose discovered PR outputs include merged pull requests.",
     )
-    list_merged_sessions_parser.add_argument("--page-size", type=int, default=50)
-    list_merged_sessions_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_merged_sessions_parser, default_page_size=50)
     list_merged_sessions_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     list_merged_sessions_parser.add_argument(
         "--require-all-merged",
@@ -1485,8 +1584,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cleanup-report",
         help="Show merged cleanup candidates, unmerged work, and sessions without PR outputs in one report.",
     )
-    cleanup_report_parser.add_argument("--page-size", type=int, default=50)
-    cleanup_report_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(cleanup_report_parser, default_page_size=50)
     cleanup_report_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     cleanup_report_parser.add_argument(
         "--require-all-merged",
@@ -1501,8 +1599,7 @@ def build_parser() -> argparse.ArgumentParser:
         "close-ready-report",
         help="Show merged-session cleanup candidates with close instructions.",
     )
-    close_ready_report_parser.add_argument("--page-size", type=int, default=50)
-    close_ready_report_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(close_ready_report_parser, default_page_size=50)
     close_ready_report_parser.add_argument("--repo-filter", help="Only include sessions for owner/repo.")
     close_ready_report_parser.add_argument(
         "--require-all-merged",
@@ -1529,8 +1626,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_sources_parser = subparsers.add_parser("list-sources", help="List connected Jules sources.")
     list_sources_parser.add_argument("--filter", help="Optional AIP-160 name filter.")
-    list_sources_parser.add_argument("--page-size", type=int, default=30)
-    list_sources_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_sources_parser, default_page_size=30)
     list_sources_parser.set_defaults(func=list_sources)
 
     repo_to_source_parser = subparsers.add_parser(
@@ -1538,15 +1634,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resolve owner/repo to a Jules source resource name.",
     )
     repo_to_source_parser.add_argument("--repo", required=True, help="GitHub repository in owner/repo format.")
-    repo_to_source_parser.add_argument("--page-size", type=int, default=100)
-    repo_to_source_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(repo_to_source_parser, default_page_size=100)
     repo_to_source_parser.add_argument("--allow-contains", action="store_true", help="Fallback to substring matching when exact source lookup fails.")
     repo_to_source_parser.add_argument("--compact", action="store_true", help="Print only the first matched source name.")
     repo_to_source_parser.set_defaults(func=repo_to_source)
 
     list_sessions_parser = subparsers.add_parser("list-sessions", help="List Jules sessions.")
-    list_sessions_parser.add_argument("--page-size", type=int, default=30)
-    list_sessions_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_sessions_parser, default_page_size=30)
     list_sessions_parser.set_defaults(func=list_sessions)
 
     delete_session_parser = subparsers.add_parser("delete-session", help="Delete a Jules session.")
@@ -1588,8 +1682,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_activities_parser = subparsers.add_parser("list-activities", help="List activities for a session.")
     list_activities_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
-    list_activities_parser.add_argument("--page-size", type=int, default=50)
-    list_activities_parser.add_argument("--page-token")
+    add_aggregate_pagination_arguments(list_activities_parser, default_page_size=50)
     list_activities_parser.set_defaults(func=list_activities)
 
     get_activity_parser = subparsers.add_parser("get-activity", help="Fetch one activity from a session.")

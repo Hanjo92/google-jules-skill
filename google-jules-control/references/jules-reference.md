@@ -115,9 +115,15 @@ Implementation detail:
 - Merge readiness is checked through `gh pr view <url> --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,...`.
 - If `gh` is missing or unauthenticated, merge status falls back to `unknown` and close should not proceed automatically.
 - `gh-auth-check` is the fast preflight check before any merge-aware report.
-- `doctor` checks core API-helper readiness. In compact output, `ready=yes` means the API helper can run, while `merge_ready=yes` means merge-aware reporting is also ready.
+- `doctor` separates `api_ready`, `cli_ready`, and `merge_ready`. `ready=yes` means at least one control path is available.
 - `close-ready-report` distinguishes between `candidates` and `cautionCandidates`. Treat caution entries as manual-review items, not automatic close targets.
 - `close-merged-session` refuses `caution` sessions by default. Only use `--allow-caution-close` after explicit user approval.
+
+Pagination contract:
+
+- Aggregated list/report commands collect all pages by default.
+- `--page-token` means “start aggregation from this token”, not “return a single raw page”.
+- Aggregated JSON responses include a `pagination` object so the behavior is explicit.
 
 ## Troubleshooting
 

@@ -33,14 +33,23 @@ python3 google-jules-control/scripts/jules_api.py doctor --compact
 정상 예시 / Healthy example:
 
 ```text
-dotenv=yes api_key=yes gh=yes gh_auth=yes merge_ready=yes jules_cli=no ready=yes
+dotenv=yes api_key=yes api_ready=yes gh=yes gh_auth=yes merge_ready=yes jules_cli=no jules_cli_auth=not_installed cli_ready=no ready=yes
 ```
 
 REST API만 쓴다면 `jules_cli=no`는 문제 아닙니다.  
 `jules_cli=no` is acceptable if you only use the REST API path.
 
-`ready=yes`는 API helper가 바로 실행 가능한 상태를 뜻합니다.  
-`merge_ready=yes` means merge-aware reporting is also ready to use.
+`api_ready=yes`는 API helper가 바로 실행 가능한 상태를 뜻합니다.  
+`api_ready=yes` means the REST API helper can run.
+
+`cli_ready=yes`는 Jules CLI 경로도 바로 쓸 수 있다는 뜻입니다.  
+`cli_ready=yes` means the Jules CLI path is also ready to use.
+
+`merge_ready=yes`는 merge-aware reporting이 준비된 상태를 뜻합니다.  
+`merge_ready=yes` means merge-aware reporting is ready to use.
+
+`ready=yes`는 API path 또는 CLI path 중 적어도 하나가 준비됐다는 뜻입니다.  
+`ready=yes` means at least one control path is ready.
 
 ## 기본 스모크 테스트 / Basic Smoke Test
 
@@ -107,10 +116,21 @@ python3 google-jules-control/scripts/jules_api.py close-ready-report --repo-filt
 python3 google-jules-control/scripts/jules_api.py stale-session-report --repo-filter owner/repo --stale-after-hours 24
 ```
 
+페이지네이션 메모 / Pagination note:
+
+- `list-*`, `cleanup-report`, `close-ready-report`, `repo-to-source`, `list-sources` 같은 집계형 명령은 기본적으로 모든 페이지를 수집합니다.  
+  Aggregated commands such as `list-*`, `cleanup-report`, `close-ready-report`, `repo-to-source`, and `list-sources` collect all pages by default.
+- `--page-token`은 단일 페이지 응답을 요청하는 옵션이 아니라, “이 토큰부터 끝까지” 수집을 시작하는 시작점입니다.  
+  `--page-token` is a starting point for aggregation, not a raw single-page mode.
+
 ## 문제 해결 / Troubleshooting
 
 - `ready=no`: `doctor`를 `--compact` 없이 실행해서 어떤 항목이 비었는지 확인합니다.  
   Run `doctor` without `--compact` to see the missing dependency.
+- `api_ready=no`: `.env`와 `JULES_API_KEY`를 먼저 점검합니다.  
+  Check `.env` and `JULES_API_KEY` first.
+- `cli_ready=no`: CLI 경로를 쓰려면 `jules login` 또는 CLI 인증 상태를 확인합니다.  
+  If you want the CLI path, check `jules login` or the CLI authentication state.
 - `merge_ready=no`: merge 기반 리포트 전에 `gh auth status`를 확인합니다.  
   Check `gh auth status` before using merge-aware reports.
 - `JULES_API_KEY is required`: `.env` 위치와 키 이름을 다시 확인합니다.  

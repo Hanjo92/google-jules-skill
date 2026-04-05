@@ -113,13 +113,50 @@ class JulesApiTests(unittest.TestCase):
         with mock.patch.object(jules_api, "find_dotenv_path", return_value=Path("/tmp/.env")):
             with mock.patch.dict(jules_api.os.environ, {"JULES_API_KEY": "test-key"}, clear=False):
                 with mock.patch.object(jules_api, "collect_gh_auth_status", return_value={"installed": True, "authenticated": False}):
-                    with mock.patch.object(jules_api, "collect_jules_cli_status", return_value={"installed": False, "path": None}):
+                    with mock.patch.object(
+                        jules_api,
+                        "collect_jules_cli_status",
+                        return_value={"installed": False, "path": None, "authStatus": "not_installed", "ready": False},
+                    ):
                         with redirect_stdout(output):
                             jules_api.doctor(args)
 
         rendered = output.getvalue().strip()
+        self.assertIn("api_ready=yes", rendered)
+        self.assertIn("cli_ready=no", rendered)
         self.assertIn("merge_ready=no", rendered)
         self.assertIn("ready=yes", rendered)
+
+    def test_collect_jules_cli_status_marks_authenticated_when_probe_succeeds(self) -> None:
+        version_result = mock.Mock(stdout="1.2.3\n", stderr="")
+        probe_result = mock.Mock(stdout="repo-a\nrepo-b\n", stderr="")
+
+        with mock.patch.object(jules_api.shutil, "which", return_value="/usr/local/bin/jules"):
+            with mock.patch.object(jules_api.subprocess, "run", side_effect=[version_result, probe_result]) as run:
+                status = jules_api.collect_jules_cli_status()
+
+        self.assertTrue(status["installed"])
+        self.assertTrue(status["authenticated"])
+        self.assertEqual("authenticated", status["authStatus"])
+        self.assertTrue(status["ready"])
+        self.assertEqual(2, run.call_count)
+
+    def test_collect_jules_cli_status_marks_login_required_when_probe_fails_with_auth_error(self) -> None:
+        version_result = mock.Mock(stdout="1.2.3\n", stderr="")
+        auth_error = jules_api.subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["jules", "remote", "list", "--repo"],
+            stderr="Please login first.",
+        )
+
+        with mock.patch.object(jules_api.shutil, "which", return_value="/usr/local/bin/jules"):
+            with mock.patch.object(jules_api.subprocess, "run", side_effect=[version_result, auth_error]):
+                status = jules_api.collect_jules_cli_status()
+
+        self.assertTrue(status["installed"])
+        self.assertFalse(status["authenticated"])
+        self.assertEqual("not_authenticated", status["authStatus"])
+        self.assertFalse(status["ready"])
 
     def test_build_close_message_uses_override_aware_command(self) -> None:
         message = jules_api.build_close_message(
@@ -150,6 +187,8 @@ class JulesApiTests(unittest.TestCase):
                 jules_api.list_sessions(args)
 
         collector.assert_called_once_with("/sessions", page_size=2, resource_key="sessions", page_token=None)
+        self.assertIn('"mode": "aggregate"', output.getvalue())
+        self.assertIn('"pageSize": 2', output.getvalue())
         self.assertIn('"name": "sessions/2"', output.getvalue())
 
     def test_list_activities_collects_all_pages(self) -> None:
@@ -165,6 +204,8 @@ class JulesApiTests(unittest.TestCase):
                 jules_api.list_activities(args)
 
         collector.assert_called_once_with("sessions/123", page_size=3, page_token=None)
+        self.assertIn('"mode": "aggregate"', output.getvalue())
+        self.assertIn('"pageSize": 3', output.getvalue())
         self.assertIn('"name": "sessions/123/activities/2"', output.getvalue())
 
     def test_summary_uses_true_latest_activity_across_pages(self) -> None:
@@ -247,6 +288,7 @@ class JulesApiTests(unittest.TestCase):
                 jules_api.export_session(args)
 
         collector.assert_called_once_with("sessions/123", page_size=10)
+        self.assertIn('"mode": "aggregate"', output.getvalue())
         self.assertIn('"name": "a2"', output.getvalue())
 
 
