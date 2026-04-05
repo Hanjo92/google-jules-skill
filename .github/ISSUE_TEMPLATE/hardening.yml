@@ -1,0 +1,57 @@
+name: Hardening / 안정화 보강
+description: Track safety, quality, ops, or maintainability improvements before or after release.
+title: "[Hardening] "
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary / 요약
+      description: Briefly describe the hardening task.
+      placeholder: What should be hardened?
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk Or Quality Gap / 리스크 또는 품질 공백
+      description: Describe the failure mode, regression risk, or operational weakness.
+      placeholder: What can go wrong today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Hardening / 제안 보강
+      description: Describe the expected code, test, docs, or workflow change.
+      placeholder: What should we tighten up?
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Plan / 검증 계획
+      description: Explain how the change should be verified.
+      placeholder: |
+        - unit tests
+        - smoke checks
+        - docs update
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria / 완료 기준
+      description: List the concrete conditions that mean this issue is done.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References / 참고 자료
+      description: Add related releases, findings, docs, sessions, or issue links if available.
+      placeholder: Related links or notes
+    validations:
+      required: false

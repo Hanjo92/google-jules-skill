@@ -1,0 +1,54 @@
+name: Improvement / 보강 요청
+description: Propose a feature, UX, docs, or workflow improvement for the repository.
+title: "[Improvement] "
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary / 요약
+      description: Briefly describe the improvement you want.
+      placeholder: What should improve?
+    validations:
+      required: true
+  - type: textarea
+    id: current_problem
+    attributes:
+      label: Current Problem / 현재 문제
+      description: Explain what is painful, confusing, missing, or inefficient now.
+      placeholder: What is the current gap or frustration?
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Why It Matters / 왜 중요한가
+      description: Describe user impact, maintenance value, safety value, or release value.
+      placeholder: Why should we spend time on this?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Change / 제안 변경
+      description: Describe the expected improvement at a high level.
+      placeholder: What should change?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria / 완료 기준
+      description: List the concrete conditions that mean this issue is done.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References / 참고 자료
+      description: Add related sessions, PRs, docs, screenshots, or issue links if available.
+      placeholder: Related links or notes
+    validations:
+      required: false

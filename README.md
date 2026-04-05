@@ -19,7 +19,8 @@ google-jules-skill/
 ├── README.md
 ├── docs/
 │   ├── setup-and-test.md
-│   └── release-checklist.md
+│   ├── release-checklist.md
+│   └── issue-workflow.md
 ├── tests/
 │   └── test_jules_api.py
 ├── Platform/
@@ -62,7 +63,13 @@ python3 google-jules-control/scripts/jules_api.py repo-to-source --repo owner/re
 
 - `docs/setup-and-test.md`
 - `docs/release-checklist.md`
+- `docs/issue-workflow.md`
 - `Platform/README.md`
+
+## 운영 원칙 / Working Rule
+
+- 보강사항은 먼저 GitHub issue로 등록한 뒤 처리합니다.  
+  Register non-trivial improvements as GitHub issues before implementation.
 
 ## 메모 / Notes
 

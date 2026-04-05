@@ -5,6 +5,7 @@ Use this checklist before sharing or publishing the skill.
 
 ## 사전 점검 / Pre-Release
 
+- 비사소한 보강사항이 구현 전에 issue로 등록되어 있는지 확인 / Confirm non-trivial improvements were registered as issues before implementation
 - `google-jules-control/SKILL.md`가 현재 명령 셋을 반영하는지 확인 / Confirm `google-jules-control/SKILL.md` reflects the current command set
 - `google-jules-control/agents/openai.yaml`이 스킬 이름과 목적에 맞는지 확인 / Confirm `google-jules-control/agents/openai.yaml` still matches the skill name and purpose
 - `google-jules-control/.env.example`에 실제 키가 없는지 확인 / Confirm `google-jules-control/.env.example` contains placeholders only
