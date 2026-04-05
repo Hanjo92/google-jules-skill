@@ -20,6 +20,8 @@ google-jules-skill/
 ├── docs/
 │   ├── setup-and-test.md
 │   └── release-checklist.md
+├── tests/
+│   └── test_jules_api.py
 ├── Platform/
 │   ├── README.md
 │   ├── Migration-Guide.md

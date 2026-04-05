@@ -33,11 +33,14 @@ python3 google-jules-control/scripts/jules_api.py doctor --compact
 정상 예시 / Healthy example:
 
 ```text
-dotenv=yes api_key=yes gh=yes gh_auth=yes jules_cli=no ready=yes
+dotenv=yes api_key=yes gh=yes gh_auth=yes merge_ready=yes jules_cli=no ready=yes
 ```
 
 REST API만 쓴다면 `jules_cli=no`는 문제 아닙니다.  
 `jules_cli=no` is acceptable if you only use the REST API path.
+
+`ready=yes`는 API helper가 바로 실행 가능한 상태를 뜻합니다.  
+`merge_ready=yes` means merge-aware reporting is also ready to use.
 
 ## 기본 스모크 테스트 / Basic Smoke Test
 
@@ -81,6 +84,7 @@ python3 google-jules-control/scripts/jules_api.py delete-session --session sessi
 상태 점검과 탐색 / Health and discovery:
 
 ```bash
+python3 -m unittest discover -s tests
 python3 google-jules-control/scripts/jules_api.py doctor --compact
 python3 google-jules-control/scripts/jules_api.py gh-auth-check --compact
 python3 google-jules-control/scripts/jules_api.py repo-to-source --repo owner/repo --compact
@@ -107,6 +111,8 @@ python3 google-jules-control/scripts/jules_api.py stale-session-report --repo-fi
 
 - `ready=no`: `doctor`를 `--compact` 없이 실행해서 어떤 항목이 비었는지 확인합니다.  
   Run `doctor` without `--compact` to see the missing dependency.
+- `merge_ready=no`: merge 기반 리포트 전에 `gh auth status`를 확인합니다.  
+  Check `gh auth status` before using merge-aware reports.
 - `JULES_API_KEY is required`: `.env` 위치와 키 이름을 다시 확인합니다.  
   Check `.env` placement and key name.
 - `gh_auth=no`: `gh auth status` 후 다시 로그인합니다.  

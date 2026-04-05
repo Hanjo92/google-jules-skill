@@ -12,7 +12,8 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
 1. Verify one control path is available.
    - API path: put `JULES_API_KEY` in a `.env` file from `https://jules.google.com/settings`.
    - CLI path: install `@google/jules`, then run `jules login`.
-   - Health check: run `python3 scripts/jules_api.py doctor --compact`.
+   - API helper health check: run `python3 scripts/jules_api.py doctor --compact`.
+   - Merge-aware reporting health check: run `python3 scripts/jules_api.py gh-auth-check --compact`.
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
    - CLI path: run `jules remote list --repo` or use `jules remote new --repo .` from the repo root.
@@ -291,6 +292,7 @@ python3 scripts/jules_api.py list-merged-sessions --repo-filter owner/repo --req
 Use this as the first step before asking the user which merged session should be closed.
 
 `close-ready-report` may also include `cautionCandidates` when some PRs are merged but the session is not fully safe to close yet, for example because not all PRs are merged or GitHub status could not be resolved.
+Do not close `cautionCandidates` by default. Use manual review first, and only use `--allow-caution-close` as an explicit override after user approval.
 
 ### Example: Generate one cleanup overview before taking action
 

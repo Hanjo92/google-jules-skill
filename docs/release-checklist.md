@@ -16,6 +16,7 @@ Use this checklist before sharing or publishing the skill.
 
 ```bash
 python3 -m py_compile google-jules-control/scripts/jules_api.py
+python3 -m unittest discover -s tests
 python3 /path/to/quick_validate.py google-jules-control
 ```
 

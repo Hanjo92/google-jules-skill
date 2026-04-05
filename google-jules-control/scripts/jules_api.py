@@ -26,6 +26,9 @@ TERMINAL_STATES = {"FAILED", "COMPLETED"}
 OPEN_STATES = ACTIVE_STATES | WAITING_STATES
 PR_URL_RE = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+")
 CLOSE_CONFIRM_TOKEN = "CLOSE_MERGED_SESSION"
+SUCCESSFUL_CHECK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+FAILED_CHECK_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED", "STALE"}
+PENDING_CHECK_STATUSES = {"EXPECTED", "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING"}
 ENV_FILE_CANDIDATES = [
     Path.cwd() / ".env",
     Path(__file__).resolve().parent.parent / ".env",
@@ -269,6 +272,7 @@ def format_cleanup_report_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- Total scanned: {payload['summary']['totalSessionsScanned']}",
         f"- Merged candidates: {payload['summary']['mergedCandidateCount']}",
+        f"- Caution: {payload['summary']['cautionCount']}",
         f"- Unmerged: {payload['summary']['unmergedCount']}",
         f"- Without PR: {payload['summary']['withoutPrCount']}",
         "",
@@ -277,6 +281,13 @@ def format_cleanup_report_markdown(payload: dict[str, Any]) -> str:
     merged = payload.get("mergedCandidates", [])
     if merged:
         lines.extend(format_session_line(item) for item in merged)
+    else:
+        lines.append("- none")
+
+    lines.extend(["", "## Caution"])
+    caution = payload.get("cautionCandidates", [])
+    if caution:
+        lines.extend(format_session_line(item) for item in caution)
     else:
         lines.append("- none")
 
@@ -301,6 +312,7 @@ def format_cleanup_report_compact(payload: dict[str, Any]) -> str:
     return (
         f"scanned={summary['totalSessionsScanned']} "
         f"merged_candidates={summary['mergedCandidateCount']} "
+        f"caution={summary['cautionCount']} "
         f"unmerged={summary['unmergedCount']} "
         f"without_pr={summary['withoutPrCount']}"
     )
@@ -313,27 +325,31 @@ def format_close_ready_markdown(payload: dict[str, Any]) -> str:
         f"- Candidates: {payload['summary']['candidateCount']}",
         f"- Caution: {payload['summary']['cautionCount']}",
         "",
+        "## Candidates",
     ]
-    for item in payload.get("candidates", []):
-        lines.append(f"## {item.get('title') or item.get('name')}")
-        lines.append(format_session_line(item))
-        lines.append(f"- Close command: `{item.get('recommendedCommand')}`")
-        lines.append(f"- Notify message: {item.get('message')}")
-        lines.append("")
-    if payload.get("cautionCandidates"):
-        lines.append("## Caution")
-        for item in payload.get("cautionCandidates", []):
+    candidates = payload.get("candidates", [])
+    if candidates:
+        for item in candidates:
+            lines.append(f"### {item.get('title') or item.get('name')}")
             lines.append(format_session_line(item))
-            lines.append(f"- Reason: allMerged={item['closeReadiness'].get('allMerged')} unknownPRs={item['closeReadiness'].get('unknownPullRequestCount')}")
+            lines.append(f"- Close command: `{item.get('recommendedCommand')}`")
+            lines.append(f"- Notify message: {item.get('message')}")
             lines.append("")
-    if not payload.get("candidates"):
+    else:
         lines.append("- none")
+
+    caution_candidates = payload.get("cautionCandidates", [])
+    if caution_candidates:
+        lines.append("## Caution")
+        for item in caution_candidates:
+            lines.append(format_session_line(item))
+            lines.append(
+                f"- Reason: allMerged={item['closeReadiness'].get('allMerged')} "
+                f"unknownPRs={item['closeReadiness'].get('unknownPullRequestCount')}"
+            )
+            lines.append("- Manual review required before any close override.")
+            lines.append("")
     return "\n".join(lines)
-
-
-def format_close_ready_compact(payload: dict[str, Any]) -> str:
-    summary = payload["summary"]
-    return f"candidates={summary['candidateCount']} caution={summary['cautionCount']}"
 
 
 def emit_output(payload: dict[str, Any], *, compact: bool = False, markdown: bool = False, compact_formatter=None, markdown_formatter=None) -> None:
@@ -344,6 +360,59 @@ def emit_output(payload: dict[str, Any], *, compact: bool = False, markdown: boo
         print_text(compact_formatter(payload))
         return
     print_json(payload)
+
+
+def normalize_gh_state(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
+
+
+def collect_status_check_blockers(checks: Any) -> list[str]:
+    blockers: list[str] = []
+    if not isinstance(checks, list):
+        return blockers
+
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        name = check.get("name") or check.get("context") or "status-check"
+        status = normalize_gh_state(check.get("status"))
+        conclusion = normalize_gh_state(check.get("conclusion"))
+
+        if conclusion in FAILED_CHECK_CONCLUSIONS:
+            blockers.append(f"{name}={conclusion}")
+            continue
+
+        if status in PENDING_CHECK_STATUSES:
+            blockers.append(f"{name}={status}")
+            continue
+
+        if status == "COMPLETED" and conclusion not in SUCCESSFUL_CHECK_CONCLUSIONS:
+            blockers.append(f"{name}={conclusion or 'UNKNOWN'}")
+    return blockers
+
+
+def build_close_command(
+    session_name: str,
+    *,
+    allow_caution_close: bool = False,
+    allow_unknown_pr_status: bool = False,
+) -> str:
+    parts = [
+        "python3",
+        "scripts/jules_api.py",
+        "close-merged-session",
+        "--session",
+        session_name,
+    ]
+    if allow_caution_close:
+        parts.append("--allow-caution-close")
+    if allow_unknown_pr_status:
+        parts.append("--allow-unknown-pr-status")
+    parts.extend(["--confirm-close", CLOSE_CONFIRM_TOKEN])
+    return " ".join(parts)
 
 
 def list_active_sessions(args: argparse.Namespace) -> None:
@@ -593,15 +662,13 @@ def close_ready_report(args: argparse.Namespace) -> None:
             continue
 
         brief = summarize_session_brief(session)
+        session_name = normalize_session_name(session.get("name", ""))
         item = {
             **brief,
             "closeReadiness": close_readiness,
             "mergeStatus": report,
-            "message": build_close_message(normalize_session_name(session.get("name", "")), brief, report),
-            "recommendedCommand": (
-                f"python3 scripts/jules_api.py close-merged-session --session {normalize_session_name(session.get('name', ''))} "
-                f"--confirm-close {CLOSE_CONFIRM_TOKEN}"
-            ),
+            "message": build_close_message(session_name, brief, report),
+            "recommendedCommand": build_close_command(session_name),
         }
 
         if close_readiness["closeReady"] and (not args.require_all_merged or report["allMerged"]):
@@ -631,17 +698,30 @@ def notify_close_plan(args: argparse.Namespace) -> None:
     session_name = normalize_session_name(args.session)
     session = api_request("GET", f"/{session_name}")
     report = build_merge_report(session)
+    close_readiness = summarize_session_close_readiness(session, report)
     brief = summarize_session_brief(session)
 
     merged_prs = report["mergedPullRequests"]
     if not merged_prs:
         fail("No merged pull request was found for this session, so a close notification plan cannot be generated safely.")
+    if close_readiness["caution"] and not args.allow_caution_close:
+        fail(
+            "This session is a caution close candidate. Review unresolved or unknown PR state first, "
+            "or rerun with --allow-caution-close after explicit user approval."
+        )
+    if close_readiness["unknownPullRequestCount"] > 0 and not args.allow_unknown_pr_status:
+        fail("Some pull requests have unknown GitHub status. Refusing to build a close plan unless --allow-unknown-pr-status is provided.")
 
     payload = {
         "session": brief,
         "mergeStatus": report,
+        "closeReadiness": close_readiness,
         "message": build_close_message(session_name, brief, report),
-        "recommendedCommand": f"python3 scripts/jules_api.py close-merged-session --session {session_name} --confirm-close {CLOSE_CONFIRM_TOKEN}",
+        "recommendedCommand": build_close_command(
+            session_name,
+            allow_caution_close=args.allow_caution_close,
+            allow_unknown_pr_status=args.allow_unknown_pr_status,
+        ),
     }
     if args.markdown:
         print_text(payload["message"])
@@ -870,19 +950,22 @@ def is_pr_merge_ready(pr: dict[str, Any]) -> bool:
     if merge_state in {"DIRTY", "BEHIND", "BLOCKED", "DRAFT", "HAS_HOOKS", "UNKNOWN", "UNSTABLE"}:
         return False
 
-    checks = pr.get("statusCheckRollup")
-    if isinstance(checks, list):
-        for check in checks:
-            conclusion = check.get("conclusion")
-            status = check.get("status")
-            if conclusion in {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"}:
-                return False
-            if status and status not in {"COMPLETED", "SUCCESS"} and conclusion not in {"SUCCESS", None}:
-                return False
-    return True
+    return not collect_status_check_blockers(pr.get("statusCheckRollup"))
 
 
 def summarize_pr_merge_readiness(pr: dict[str, Any]) -> dict[str, Any]:
+    if pr.get("merged"):
+        return {
+            "number": pr.get("number"),
+            "title": pr.get("title"),
+            "url": pr.get("url"),
+            "ready": True,
+            "mergeable": pr.get("mergeable"),
+            "mergeStateStatus": pr.get("mergeStateStatus"),
+            "reviewDecision": pr.get("reviewDecision"),
+            "blockers": [],
+        }
+
     ready = is_pr_merge_ready(pr)
     blockers: list[str] = []
 
@@ -897,13 +980,7 @@ def summarize_pr_merge_readiness(pr: dict[str, Any]) -> dict[str, Any]:
     if review_decision == "CHANGES_REQUESTED":
         blockers.append("reviewDecision=CHANGES_REQUESTED")
 
-    checks = pr.get("statusCheckRollup")
-    if isinstance(checks, list):
-        for check in checks:
-            name = check.get("name") or check.get("context") or "status-check"
-            conclusion = check.get("conclusion")
-            if conclusion in {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"}:
-                blockers.append(f"{name}={conclusion}")
+    blockers.extend(collect_status_check_blockers(pr.get("statusCheckRollup")))
 
     return {
         "number": pr.get("number"),
@@ -972,9 +1049,7 @@ def build_close_message(session_name: str, brief: dict[str, Any], report: dict[s
     else:
         lines.append("Some PRs are merged, but not all discovered PRs are merged yet.")
 
-    lines.append(
-        f"If you want to close it, confirm and then run: python3 scripts/jules_api.py close-merged-session --session {session_name} --confirm-close {CLOSE_CONFIRM_TOKEN}"
-    )
+    lines.append(f"If you want to close it, confirm and then run: {build_close_command(session_name)}")
     return "\n".join(lines)
 
 
@@ -1224,6 +1299,11 @@ def close_merged_session(args: argparse.Namespace) -> None:
         fail("No merged pull request was found for this session. Refusing to close it.")
     if args.require_all_merged and not report["allMerged"]:
         fail("Some pull requests for this session are not merged yet. Refusing to close it.")
+    if close_readiness["caution"] and not args.allow_caution_close:
+        fail(
+            "This session is not fully close-ready. Review unresolved or unknown PR state first, "
+            "or rerun with --allow-caution-close after explicit user approval."
+        )
     if close_readiness["unknownPullRequestCount"] > 0 and not args.allow_unknown_pr_status:
         fail("Some pull requests have unknown GitHub status. Refusing to close unless --allow-unknown-pr-status is provided.")
     if args.confirm_close != CLOSE_CONFIRM_TOKEN:
@@ -1249,6 +1329,7 @@ def doctor(args: argparse.Namespace) -> None:
     api_key_present = bool(os.environ.get("JULES_API_KEY", "").strip())
     gh_status = collect_gh_auth_status()
     jules_status = collect_jules_cli_status()
+    merge_ready = bool(gh_status.get("installed") and gh_status.get("authenticated"))
 
     payload = {
         "dotenv": {
@@ -1260,9 +1341,10 @@ def doctor(args: argparse.Namespace) -> None:
         },
         "gh": gh_status,
         "julesCli": jules_status,
+        "mergeReady": merge_ready,
     }
 
-    payload["ready"] = bool(api_key_present and gh_status.get("installed") and gh_status.get("authenticated"))
+    payload["ready"] = bool(api_key_present)
 
     if args.compact:
         print_text(
@@ -1272,6 +1354,7 @@ def doctor(args: argparse.Namespace) -> None:
                     f"api_key={'yes' if api_key_present else 'no'}",
                     f"gh={'yes' if gh_status.get('installed') else 'no'}",
                     f"gh_auth={'yes' if gh_status.get('authenticated') else 'no'}",
+                    f"merge_ready={'yes' if merge_ready else 'no'}",
                     f"jules_cli={'yes' if jules_status.get('installed') else 'no'}",
                     f"ready={'yes' if payload['ready'] else 'no'}",
                 ]
@@ -1531,6 +1614,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate a user-facing confirmation message for a merged session before closing it.",
     )
     notify_close_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
+    notify_close_parser.add_argument(
+        "--allow-caution-close",
+        action="store_true",
+        help="Allow a manually reviewed close plan even when the session is marked caution.",
+    )
+    notify_close_parser.add_argument(
+        "--allow-unknown-pr-status",
+        action="store_true",
+        help="Allow a manually reviewed close plan when some PR statuses are unknown.",
+    )
     notify_close_parser.add_argument("--markdown", action="store_true", help="Print only the user-facing message as Markdown text.")
     notify_close_parser.set_defaults(func=notify_close_plan)
 
@@ -1552,6 +1645,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-unknown-pr-status",
         action="store_true",
         help="Allow close even when some PR statuses could not be resolved from GitHub.",
+    )
+    close_merged_parser.add_argument(
+        "--allow-caution-close",
+        action="store_true",
+        help="Allow a manually reviewed override close when the session is marked caution.",
     )
     close_merged_parser.set_defaults(func=close_merged_session)
 
