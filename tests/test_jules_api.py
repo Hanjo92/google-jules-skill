@@ -20,7 +20,10 @@ class JulesApiTests(unittest.TestCase):
 
         self.assertIn("Interpret the request as narrowly as possible.", prompt)
         self.assertIn("Do not expand scope on your own.", prompt)
+        self.assertIn("Touch only what you must. Clean up only your own mess.", prompt)
+        self.assertIn("Every changed line should trace directly to the user's request.", prompt)
         self.assertIn("If multiple interpretations are possible, do not choose the broader one.", prompt)
+        self.assertIn("Verification performed", prompt)
         self.assertIn("Fix the flaky login redirect test.", prompt)
 
     def test_create_session_wraps_prompt_with_strict_scope_rules(self) -> None:

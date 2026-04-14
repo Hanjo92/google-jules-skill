@@ -32,10 +32,14 @@ Default behavior:
 
 - Jules should interpret the task as narrowly as possible.
 - Jules should not expand scope on its own.
+- Jules should touch only what it must and clean up only its own mess.
 - Jules should avoid unrelated cleanup, refactors, optimization, or restructuring unless explicitly requested.
+- Jules should avoid improving adjacent code, comments, or formatting just because it noticed them.
+- Every changed line should trace directly to the user's request.
+- If Jules notices unrelated dead code, it should mention it instead of deleting it.
 - If the request is ambiguous, or if work outside the stated scope appears necessary, Jules should stop and ask a clarifying question instead of choosing the broader path.
 - Jules should prefer the smallest patch that satisfies the stated task.
-- Jules should report what changed, what it intentionally did not change, and what still needs clarification.
+- Jules should report what changed, what it intentionally did not change, what still needs clarification, and what verification it performed.
 
 Optional prompt controls:
 
@@ -448,6 +452,7 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Use `summary` or `list-activities` before responding so the user gets the latest agent-visible state, not just the initial session creation response.
 - Treat Jules as asynchronous. After `create-session`, `send-message`, or `approve-plan`, poll for updated activities instead of assuming immediate textual output.
 - Prompts sent through the API helper are strict-scope by default. Use that default unless there is a clear reason to opt out.
+- Treat strict-scope as both a simplicity rule and a surgical-change rule: minimum necessary patch, minimum necessary blast radius.
 - If the user gives only an owner/repo pair and not a Jules source resource name, resolve it with `list-sources` first.
 - If `AWAITING_PLAN_APPROVAL` appears, surface the plan and explicitly approve it only when the user asked to continue or the task clearly implies execution should proceed.
 - If the session reaches `AWAITING_USER_FEEDBACK`, send a concise clarifying instruction instead of creating a new session.
@@ -455,6 +460,7 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Use `--scope-note` when a file area, subsystem, or execution boundary must be stated explicitly.
 - Use `--non-goal` when you need to forbid refactors, cleanup, dependency changes, schema changes, or other adjacent work.
 - If the task is ambiguous, prefer a follow-up question over a broader instruction.
+- Prefer goal-driven follow-ups with explicit verification targets over vague “improve this” style prompts.
 - Treat `cancel-session` as destructive. It maps to session deletion, not a reversible pause.
 - For merged-work cleanup, always follow this order: inspect session, verify merged PR status, ask the user, then run `close-merged-session`.
 - Use `--require-all-merged` when the session output contains more than one pull request URL.

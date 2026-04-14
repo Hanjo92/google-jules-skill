@@ -123,7 +123,12 @@ def build_strict_scope_prompt(
         [
             "- Interpret the request as narrowly as possible.",
             "- Do not expand scope on your own.",
+            "- Touch only what you must. Clean up only your own mess.",
             "- Do not do unrelated cleanup, refactoring, optimization, or restructuring unless explicitly requested.",
+            "- Do not improve adjacent code, comments, or formatting.",
+            "- Every changed line should trace directly to the user's request.",
+            "- If you notice unrelated dead code, mention it instead of deleting it.",
+            "- Remove imports, variables, or functions only when your own changes made them unused.",
             "- If a change outside the stated scope appears necessary, stop and ask a question first.",
             "- If multiple interpretations are possible, do not choose the broader one. Ask a question.",
             "- Prefer the smallest patch that satisfies the stated task.",
@@ -148,6 +153,7 @@ def build_strict_scope_prompt(
             "- What changed",
             "- What you intentionally did not change",
             "- What needs clarification or follow-up",
+            "- Verification performed",
         ]
     )
     return "\n".join(lines)
