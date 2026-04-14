@@ -12,6 +12,9 @@ When handling Jules-related tasks:
 - Start with `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
 - If the user only gives owner/repo, resolve it with `repo-to-source --repo owner/repo --compact`.
 - Use `.env` with JULES_API_KEY as the default auth path.
+- Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
+- If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
+- Use `--scope-note` and `--non-goal` when you need extra task boundaries.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing updates.
 - Before merge-aware cleanup, run `gh-auth-check --compact`.
 - Never close, cancel, or delete a Jules session without explicit user confirmation.
@@ -37,6 +40,9 @@ When handling Jules-related tasks:
 - Start with `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
 - If the user only gives owner/repo, resolve it with `repo-to-source --repo owner/repo --compact`.
 - Use `.env` with JULES_API_KEY as the default auth path.
+- Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
+- If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
+- Use `--scope-note` and `--non-goal` when you need extra task boundaries.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing updates.
 - Before merge-aware cleanup, run `gh-auth-check --compact`.
 - Never close, cancel, or delete a Jules session without explicit user confirmation.

@@ -10,6 +10,9 @@ Rules:
 - Start with `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
 - Resolve owner/repo with `repo-to-source --repo owner/repo --compact` before session creation.
 - Use `.env` with JULES_API_KEY as the default auth path.
+- Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are strict-scope by default.
+- If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
+- Use `--scope-note` and `--non-goal` when extra boundaries matter.
 - Prefer `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for human review.
 - Run `gh-auth-check --compact` before merge-aware reporting or cleanup.
 - Require explicit user confirmation before any delete-style command or `close-merged-session`.
@@ -33,6 +36,9 @@ Rules:
 - Start with `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
 - Resolve owner/repo with `repo-to-source --repo owner/repo --compact` before session creation.
 - Use `.env` with JULES_API_KEY as the default auth path.
+- Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are strict-scope by default.
+- If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
+- Use `--scope-note` and `--non-goal` when extra boundaries matter.
 - Prefer `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for human review.
 - Run `gh-auth-check --compact` before merge-aware reporting or cleanup.
 - Require explicit user confirmation before any delete-style command or `close-merged-session`.

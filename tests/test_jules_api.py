@@ -15,6 +15,136 @@ SPEC.loader.exec_module(jules_api)
 
 
 class JulesApiTests(unittest.TestCase):
+    def test_build_strict_scope_prompt_includes_default_guards(self) -> None:
+        prompt = jules_api.build_strict_scope_prompt("Fix the flaky login redirect test.")
+
+        self.assertIn("Interpret the request as narrowly as possible.", prompt)
+        self.assertIn("Do not expand scope on your own.", prompt)
+        self.assertIn("If multiple interpretations are possible, do not choose the broader one.", prompt)
+        self.assertIn("Fix the flaky login redirect test.", prompt)
+
+    def test_create_session_wraps_prompt_with_strict_scope_rules(self) -> None:
+        args = argparse.Namespace(
+            source="sources/github/owner/repo",
+            branch="main",
+            prompt="Fix the flaky login redirect test.",
+            title="Fix flaky test",
+            require_plan_approval=True,
+            automation_mode=None,
+        )
+
+        with mock.patch.object(jules_api, "api_request", return_value={"name": "sessions/123"}) as api_request:
+            jules_api.create_session(args)
+
+        payload = api_request.call_args.kwargs["payload"]
+        self.assertIn("Interpret the request as narrowly as possible.", payload["prompt"])
+        self.assertIn("Fix the flaky login redirect test.", payload["prompt"])
+
+    def test_send_message_wraps_prompt_with_follow_up_scope_guard(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            prompt="Keep the patch under 200 lines.",
+        )
+
+        with mock.patch.object(jules_api, "api_request", return_value={}) as api_request:
+            jules_api.send_message(args)
+
+        payload = api_request.call_args.kwargs["payload"]
+        self.assertIn("Continue only within the existing approved task scope.", payload["prompt"])
+        self.assertIn("Keep the patch under 200 lines.", payload["prompt"])
+
+    def test_create_session_includes_scope_notes_and_non_goals(self) -> None:
+        args = argparse.Namespace(
+            source="sources/github/owner/repo",
+            branch="main",
+            prompt="Fix the flaky login redirect test.",
+            title=None,
+            require_plan_approval=False,
+            automation_mode=None,
+            scope_note=["Stay within tests/auth."],
+            non_goal=["Do not refactor shared helpers."],
+        )
+
+        with mock.patch.object(jules_api, "api_request", return_value={"name": "sessions/123"}) as api_request:
+            jules_api.create_session(args)
+
+        payload = api_request.call_args.kwargs["payload"]
+        self.assertIn("Scope notes:", payload["prompt"])
+        self.assertIn("Stay within tests/auth.", payload["prompt"])
+        self.assertIn("Non-goals:", payload["prompt"])
+        self.assertIn("Do not refactor shared helpers.", payload["prompt"])
+
+    def test_resume_session_wraps_prompt_with_follow_up_scope_guard(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            prompt="Only fix the failing CI check.",
+            allow_active=False,
+        )
+        session = {"name": "sessions/123", "state": "PAUSED"}
+
+        with mock.patch.object(jules_api, "api_request", side_effect=[session, {"ok": True}]) as api_request:
+            jules_api.resume_session(args)
+
+        payload = api_request.call_args_list[1].kwargs["payload"]
+        self.assertIn("Continue only within the existing approved task scope.", payload["prompt"])
+        self.assertIn("Only fix the failing CI check.", payload["prompt"])
+
+    def test_request_pr_rework_send_scopes_message_to_current_pr(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            extra_instruction="Avoid dependency updates.",
+            send=True,
+            markdown=False,
+        )
+        session = {"name": "sessions/123", "title": "Rework test", "state": "IN_PROGRESS", "outputs": ["https://github.com/owner/repo/pull/1"]}
+        report = {
+            "pullRequests": [
+                {
+                    "number": 1,
+                    "title": "Fix flaky login redirect test",
+                    "url": "https://github.com/owner/repo/pull/1",
+                    "status": "not_merged",
+                    "merged": False,
+                    "mergeable": "CONFLICTING",
+                    "mergeStateStatus": "DIRTY",
+                    "reviewDecision": "CHANGES_REQUESTED",
+                    "statusCheckRollup": [{"name": "ci/test", "status": "COMPLETED", "conclusion": "FAILURE"}],
+                }
+            ]
+        }
+
+        with mock.patch.object(jules_api, "api_request", side_effect=[session, {"ok": True}]) as api_request:
+            with mock.patch.object(jules_api, "build_merge_report", return_value=report):
+                jules_api.request_pr_rework(args)
+
+        payload = api_request.call_args_list[1].kwargs["payload"]
+        self.assertIn("Only make the minimum changes required to make the current pull request merge-ready.", payload["prompt"])
+        self.assertIn("Avoid dependency updates.", payload["prompt"])
+
+    def test_build_parser_supports_scope_control_flags(self) -> None:
+        parser = jules_api.build_parser()
+
+        args = parser.parse_args(
+            [
+                "create-session",
+                "--source",
+                "sources/github/owner/repo",
+                "--branch",
+                "main",
+                "--prompt",
+                "Fix flaky test",
+                "--scope-note",
+                "tests/auth only",
+                "--non-goal",
+                "no refactor",
+                "--no-strict-scope",
+            ]
+        )
+
+        self.assertEqual(["tests/auth only"], args.scope_note)
+        self.assertEqual(["no refactor"], args.non_goal)
+        self.assertFalse(args.strict_scope)
+
     def test_in_progress_status_check_is_not_merge_ready(self) -> None:
         pr = {
             "status": "not_merged",

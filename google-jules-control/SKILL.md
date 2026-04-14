@@ -17,12 +17,31 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
    - CLI path: run `jules remote list --repo` or use `jules remote new --repo .` from the repo root.
-3. Create a session with a concrete prompt and branch.
+3. Create a session with a concrete prompt and branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
 4. Poll session state or activities until Jules requests approval, feedback, or completes.
 5. Approve the latest plan if the session enters `AWAITING_PLAN_APPROVAL`.
 6. If needed, inspect open sessions with `list-active-sessions`.
 7. For completed PR work, verify merge status before closing the Jules session.
 8. Summarize results for the user, including session URL, current state, latest agent message, PR status, and whether the session is safe to close.
+
+## Prompt Hardening Defaults
+
+The API helper now wraps `create-session`, `send-message`, `resume`, and `request-pr-rework` prompts with a shared strict-scope contract by default.
+
+Default behavior:
+
+- Jules should interpret the task as narrowly as possible.
+- Jules should not expand scope on its own.
+- Jules should avoid unrelated cleanup, refactors, optimization, or restructuring unless explicitly requested.
+- If the request is ambiguous, or if work outside the stated scope appears necessary, Jules should stop and ask a clarifying question instead of choosing the broader path.
+- Jules should prefer the smallest patch that satisfies the stated task.
+- Jules should report what changed, what it intentionally did not change, and what still needs clarification.
+
+Optional prompt controls:
+
+- `--scope-note "..."` adds an explicit scope guardrail. Repeat it for multiple notes.
+- `--non-goal "..."` adds an explicit non-goal. Repeat it for multiple non-goals.
+- `--no-strict-scope` disables the wrapper and sends the raw prompt. Prefer this only for unusual cases where the default contract would get in the way.
 
 ## Workflow
 
@@ -42,6 +61,8 @@ python3 scripts/jules_api.py create-session \
   --branch main \
   --title "Add regression tests" \
   --prompt "Add regression tests for the login redirect bug." \
+  --scope-note "Stay within the login redirect flow and its tests." \
+  --non-goal "Do not refactor unrelated auth helpers." \
   --require-plan-approval
 
 python3 scripts/jules_api.py wait --session sessions/1234567890
@@ -50,11 +71,13 @@ python3 scripts/jules_api.py approve-plan --session sessions/1234567890
 
 python3 scripts/jules_api.py send-message \
   --session sessions/1234567890 \
-  --prompt "Keep the patch small and add one focused test."
+  --prompt "Keep the patch small and add one focused test." \
+  --non-goal "Do not broaden into unrelated cleanup."
 
 python3 scripts/jules_api.py resume \
   --session sessions/1234567890 \
-  --prompt "Continue and keep the diff under 200 lines."
+  --prompt "Continue and keep the diff under 200 lines." \
+  --scope-note "Only continue within the approved task."
 
 python3 scripts/jules_api.py export \
   --session sessions/1234567890 \
@@ -123,6 +146,8 @@ python3 scripts/jules_api.py create-session \
   --branch main \
   --title "Fix flaky login redirect test" \
   --prompt "Investigate and fix the flaky login redirect test. Keep the patch focused and add or update tests." \
+  --scope-note "Stay within the login redirect path and related tests." \
+  --non-goal "Do not refactor unrelated auth code." \
   --require-plan-approval
 
 python3 scripts/jules_api.py wait --session sessions/SESSION_ID
@@ -172,7 +197,8 @@ python3 scripts/jules_api.py summary --session sessions/SESSION_ID
 
 python3 scripts/jules_api.py send-message \
   --session sessions/SESSION_ID \
-  --prompt "Continue, keep the diff under 300 lines, and avoid schema changes."
+  --prompt "Continue, keep the diff under 300 lines, and avoid schema changes." \
+  --non-goal "Do not turn this into a broader cleanup."
 
 python3 scripts/jules_api.py wait --session sessions/SESSION_ID
 ```
@@ -182,7 +208,8 @@ If the session is paused or explicitly waiting for feedback, `resume` can send t
 ```bash
 python3 scripts/jules_api.py resume \
   --session sessions/SESSION_ID \
-  --prompt "Continue, keep the diff under 300 lines, and avoid schema changes."
+  --prompt "Continue, keep the diff under 300 lines, and avoid schema changes." \
+  --scope-note "Only continue within the approved plan."
 ```
 
 ### Example: Export the latest Jules result for another tool
@@ -368,7 +395,10 @@ Suggested flow:
 
 ```bash
 python3 scripts/jules_api.py check-pr-readiness --session sessions/SESSION_ID
-python3 scripts/jules_api.py request-pr-rework --session sessions/SESSION_ID --markdown
+python3 scripts/jules_api.py request-pr-rework \
+  --session sessions/SESSION_ID \
+  --non-goal "Do not broaden beyond the current PR blockers." \
+  --markdown
 ```
 
 If you already want to send the rework request back to Jules:
@@ -377,6 +407,7 @@ If you already want to send the rework request back to Jules:
 python3 scripts/jules_api.py request-pr-rework \
   --session sessions/SESSION_ID \
   --extra-instruction "Keep the fix minimal and preserve the existing branch." \
+  --scope-note "Only make the minimum changes needed for this PR." \
   --send
 ```
 
@@ -416,10 +447,14 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Prefer the CLI for human-driven terminal workflows, quick repo inference from the current directory, or pulling a completed patch into the local checkout.
 - Use `summary` or `list-activities` before responding so the user gets the latest agent-visible state, not just the initial session creation response.
 - Treat Jules as asynchronous. After `create-session`, `send-message`, or `approve-plan`, poll for updated activities instead of assuming immediate textual output.
+- Prompts sent through the API helper are strict-scope by default. Use that default unless there is a clear reason to opt out.
 - If the user gives only an owner/repo pair and not a Jules source resource name, resolve it with `list-sources` first.
 - If `AWAITING_PLAN_APPROVAL` appears, surface the plan and explicitly approve it only when the user asked to continue or the task clearly implies execution should proceed.
 - If the session reaches `AWAITING_USER_FEEDBACK`, send a concise clarifying instruction instead of creating a new session.
 - Use `resume` as a convenience helper only. It is not a first-class Jules API verb; it infers the right next step from the session state.
+- Use `--scope-note` when a file area, subsystem, or execution boundary must be stated explicitly.
+- Use `--non-goal` when you need to forbid refactors, cleanup, dependency changes, schema changes, or other adjacent work.
+- If the task is ambiguous, prefer a follow-up question over a broader instruction.
 - Treat `cancel-session` as destructive. It maps to session deletion, not a reversible pause.
 - For merged-work cleanup, always follow this order: inspect session, verify merged PR status, ask the user, then run `close-merged-session`.
 - Use `--require-all-merged` when the session output contains more than one pull request URL.

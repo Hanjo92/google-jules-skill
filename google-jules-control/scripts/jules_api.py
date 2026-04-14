@@ -78,6 +78,106 @@ def normalize_session_name(value: str) -> str:
     return f"sessions/{value}"
 
 
+def normalize_repeated_argument(values: Any) -> list[str]:
+    if not values:
+        return []
+    if isinstance(values, str):
+        values = [values]
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        item = value.strip()
+        if item:
+            normalized.append(item)
+    return normalized
+
+
+def build_strict_scope_prompt(
+    user_prompt: str,
+    *,
+    scope_notes: list[str] | None = None,
+    non_goals: list[str] | None = None,
+    continue_existing_scope: bool = False,
+    limit_to_current_pr: bool = False,
+) -> str:
+    task = user_prompt.strip()
+    if not task:
+        fail("Prompt text is required.")
+
+    lines = [
+        "You are working under a strict scoped task.",
+        "",
+        "Primary task:",
+        task,
+        "",
+        "Operating rules:",
+    ]
+
+    if continue_existing_scope:
+        lines.append("- Continue only within the existing approved task scope.")
+    if limit_to_current_pr:
+        lines.append("- Only make the minimum changes required to make the current pull request merge-ready.")
+
+    lines.extend(
+        [
+            "- Interpret the request as narrowly as possible.",
+            "- Do not expand scope on your own.",
+            "- Do not do unrelated cleanup, refactoring, optimization, or restructuring unless explicitly requested.",
+            "- If a change outside the stated scope appears necessary, stop and ask a question first.",
+            "- If multiple interpretations are possible, do not choose the broader one. Ask a question.",
+            "- Prefer the smallest patch that satisfies the stated task.",
+            "- Keep existing behavior unchanged outside the requested area.",
+        ]
+    )
+
+    normalized_scope_notes = normalize_repeated_argument(scope_notes)
+    if normalized_scope_notes:
+        lines.extend(["", "Scope notes:"])
+        lines.extend([f"- {note}" for note in normalized_scope_notes])
+
+    normalized_non_goals = normalize_repeated_argument(non_goals)
+    if normalized_non_goals:
+        lines.extend(["", "Non-goals:"])
+        lines.extend([f"- {item}" for item in normalized_non_goals])
+
+    lines.extend(
+        [
+            "",
+            "Before finishing, report:",
+            "- What changed",
+            "- What you intentionally did not change",
+            "- What needs clarification or follow-up",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_prompt_from_args(
+    args: argparse.Namespace,
+    prompt: str,
+    *,
+    continue_existing_scope: bool = False,
+    limit_to_current_pr: bool = False,
+    extra_scope_notes: list[str] | None = None,
+    extra_non_goals: list[str] | None = None,
+) -> str:
+    if getattr(args, "strict_scope", True) is False:
+        return prompt
+
+    scope_notes = normalize_repeated_argument(getattr(args, "scope_note", None))
+    non_goals = normalize_repeated_argument(getattr(args, "non_goal", None))
+    scope_notes.extend(normalize_repeated_argument(extra_scope_notes))
+    non_goals.extend(normalize_repeated_argument(extra_non_goals))
+    return build_strict_scope_prompt(
+        prompt,
+        scope_notes=scope_notes,
+        non_goals=non_goals,
+        continue_existing_scope=continue_existing_scope,
+        limit_to_current_pr=limit_to_current_pr,
+    )
+
+
 def build_url(path: str, query: dict[str, Any] | None = None) -> str:
     path = path if path.startswith("/") else f"/{path}"
     url = f"{DEFAULT_BASE_URL}{path}"
@@ -492,6 +592,26 @@ def add_aggregate_pagination_arguments(parser: argparse.ArgumentParser, *, defau
         "--page-token",
         help="Optional start token. The command will aggregate pages from this token onward.",
     )
+
+
+def add_scope_control_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--scope-note",
+        action="append",
+        help="Optional extra scope guardrail to include in the Jules prompt. Repeat to add more than one.",
+    )
+    parser.add_argument(
+        "--non-goal",
+        action="append",
+        help="Optional explicit non-goal to include in the Jules prompt. Repeat to add more than one.",
+    )
+    parser.add_argument(
+        "--no-strict-scope",
+        dest="strict_scope",
+        action="store_false",
+        help="Send the raw prompt without the default strict-scope wrapper.",
+    )
+    parser.set_defaults(strict_scope=True)
 
 
 def list_active_sessions(args: argparse.Namespace) -> None:
@@ -909,7 +1029,7 @@ def get_session(args: argparse.Namespace) -> None:
 
 def create_session(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
-        "prompt": args.prompt,
+        "prompt": build_prompt_from_args(args, args.prompt),
         "sourceContext": {
             "source": args.source,
             "githubRepoContext": {
@@ -928,7 +1048,11 @@ def create_session(args: argparse.Namespace) -> None:
 
 
 def send_message(args: argparse.Namespace) -> None:
-    api_request("POST", f"/{normalize_session_name(args.session)}:sendMessage", payload={"prompt": args.prompt})
+    api_request(
+        "POST",
+        f"/{normalize_session_name(args.session)}:sendMessage",
+        payload={"prompt": build_prompt_from_args(args, args.prompt, continue_existing_scope=True)},
+    )
     print(json.dumps({"ok": True, "session": normalize_session_name(args.session)}, ensure_ascii=False))
 
 
@@ -1316,19 +1440,31 @@ def resume_session(args: argparse.Namespace) -> None:
         api_request("POST", f"/{session_name}:approvePlan", payload={})
         actions.append("approved_plan")
         if args.prompt:
-            api_request("POST", f"/{session_name}:sendMessage", payload={"prompt": args.prompt})
+            api_request(
+                "POST",
+                f"/{session_name}:sendMessage",
+                payload={"prompt": build_prompt_from_args(args, args.prompt, continue_existing_scope=True)},
+            )
             actions.append("sent_message")
     elif state in {"AWAITING_USER_FEEDBACK", "PAUSED"}:
         if not args.prompt:
             fail(f"Session is {state}. Provide --prompt so Jules has instructions to continue.")
-        api_request("POST", f"/{session_name}:sendMessage", payload={"prompt": args.prompt})
+        api_request(
+            "POST",
+            f"/{session_name}:sendMessage",
+            payload={"prompt": build_prompt_from_args(args, args.prompt, continue_existing_scope=True)},
+        )
         actions.append("sent_message")
     elif state in ACTIVE_STATES:
         if not args.allow_active:
             fail(f"Session is already active ({state}). Use --allow-active to send an extra message anyway.")
         if not args.prompt:
             fail("Use --prompt together with --allow-active to send more instructions to an active session.")
-        api_request("POST", f"/{session_name}:sendMessage", payload={"prompt": args.prompt})
+        api_request(
+            "POST",
+            f"/{session_name}:sendMessage",
+            payload={"prompt": build_prompt_from_args(args, args.prompt, continue_existing_scope=True)},
+        )
         actions.append("sent_message")
     elif state in TERMINAL_STATES:
         fail(f"Session is {state} and cannot be resumed.")
@@ -1418,7 +1554,13 @@ def request_pr_rework(args: argparse.Namespace) -> None:
     if args.extra_instruction:
         lines.append(args.extra_instruction.strip())
 
-    message = "\n".join(lines)
+    message = build_prompt_from_args(
+        args,
+        "\n".join(lines),
+        continue_existing_scope=True,
+        limit_to_current_pr=True,
+        extra_non_goals=["Do not broaden the task beyond the current pull request blockers."],
+    )
     payload = {
         "session": summarize_session_brief(session),
         "pullRequestReadiness": readiness,
@@ -1664,6 +1806,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_session_parser.add_argument("--prompt", required=True, help="Initial Jules task prompt.")
     create_session_parser.add_argument("--title", help="Optional session title.")
     create_session_parser.add_argument("--require-plan-approval", action="store_true", help="Require explicit plan approval before execution.")
+    add_scope_control_arguments(create_session_parser)
     create_session_parser.add_argument(
         "--automation-mode",
         choices=["AUTO_CREATE_PR"],
@@ -1674,6 +1817,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_message_parser = subparsers.add_parser("send-message", help="Send a follow-up message to a session.")
     send_message_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
     send_message_parser.add_argument("--prompt", required=True, help="Follow-up instruction.")
+    add_scope_control_arguments(send_message_parser)
     send_message_parser.set_defaults(func=send_message)
 
     approve_plan_parser = subparsers.add_parser("approve-plan", help="Approve the latest plan in a session.")
@@ -1704,6 +1848,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
     resume_parser.add_argument("--prompt", help="Optional follow-up instruction. Required for PAUSED and AWAITING_USER_FEEDBACK.")
     resume_parser.add_argument("--allow-active", action="store_true", help="Allow sending a message even if the session is already active.")
+    add_scope_control_arguments(resume_parser)
     resume_parser.set_defaults(func=resume_session)
 
     summary_parser = subparsers.add_parser("summary", help="Print a compact summary for a session and its latest activities.")
@@ -1754,6 +1899,7 @@ def build_parser() -> argparse.ArgumentParser:
     request_pr_rework_parser.add_argument("--extra-instruction", help="Optional extra instruction appended to the rework message.")
     request_pr_rework_parser.add_argument("--send", action="store_true", help="Send the generated message to Jules immediately.")
     request_pr_rework_parser.add_argument("--markdown", action="store_true", help="Print only the generated rework message.")
+    add_scope_control_arguments(request_pr_rework_parser)
     request_pr_rework_parser.set_defaults(func=request_pr_rework)
 
     notify_close_parser = subparsers.add_parser(
