@@ -48,7 +48,7 @@ Important session fields:
 Practical note:
 
 - There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan or sending a follow-up message.
-- There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action.
+- There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action, so `delete-session` and `cancel-session` require `--confirm-delete DELETE_JULES_SESSION` after explicit user confirmation.
 - The public API does not document a reliable remaining-usage or quota-balance endpoint for end users. Handle quota failures explicitly, but do not guess a remaining amount.
 
 Activity types to watch:
@@ -108,6 +108,8 @@ The bundled `jules_api.py` script automates this with:
 - `check-pr-readiness --session ...`
 - `request-pr-rework --session ... --markdown`
 - `notify-close-plan --session ... --markdown`
+- `delete-session --session ... --confirm-delete DELETE_JULES_SESSION`
+- `cancel-session --session ... --confirm-delete DELETE_JULES_SESSION`
 - `close-merged-session --session ... --confirm-close CLOSE_MERGED_SESSION`
 
 Implementation detail:
@@ -119,6 +121,7 @@ Implementation detail:
 - `doctor` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`. Without `--validate-api`, `api_key=yes` only means the key is present. With `--validate-api`, `api_ready=yes` means the API probe authenticated successfully. `ready=yes` means at least one validated control path is available.
 - `close-ready-report` distinguishes between `candidates` and `cautionCandidates`. Treat caution entries as manual-review items, not automatic close targets.
 - `close-merged-session` refuses `caution` sessions by default. Only use `--allow-caution-close` after explicit user approval.
+- `delete-session` and `cancel-session` refuse to run without the explicit delete token because both are irreversible deletion flows.
 
 Pagination contract:
 

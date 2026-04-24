@@ -249,10 +249,15 @@ Suggested flow:
 
 ```bash
 python3 scripts/jules_api.py summary --session sessions/SESSION_ID
-python3 scripts/jules_api.py cancel-session --session sessions/SESSION_ID
 ```
 
-State clearly that this is implemented as session deletion and is not a reversible pause.
+State clearly that cancel is implemented as session deletion and is not a reversible pause. After explicit user confirmation, run:
+
+```bash
+python3 scripts/jules_api.py cancel-session \
+  --session sessions/SESSION_ID \
+  --confirm-delete DELETE_JULES_SESSION
+```
 
 ### Example: Check active sessions and close a merged one safely
 
@@ -463,7 +468,7 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Use `--non-goal` when you need to forbid refactors, cleanup, dependency changes, schema changes, or other adjacent work.
 - If the task is ambiguous, prefer a follow-up question over a broader instruction.
 - Prefer goal-driven follow-ups with explicit verification targets over vague “improve this” style prompts.
-- Treat `cancel-session` as destructive. It maps to session deletion, not a reversible pause.
+- Treat `delete-session` and `cancel-session` as destructive. They map to irreversible session deletion, not a reversible pause, and require explicit user confirmation plus `--confirm-delete DELETE_JULES_SESSION`.
 - For merged-work cleanup, always follow this order: inspect session, verify merged PR status, ask the user, then run `close-merged-session`.
 - Use `--require-all-merged` when the session output contains more than one pull request URL.
 - Use `list-unmerged-sessions` when the user wants a single view of work that is still open on GitHub.
@@ -515,6 +520,11 @@ The bundled script lives at `scripts/jules_api.py` and supports:
 - `close-merged-session`
 
 Run `python3 scripts/jules_api.py --help` or `python3 scripts/jules_api.py <command> --help` for flags.
+
+Destructive commands intentionally require safety tokens:
+
+- `delete-session` and `cancel-session`: `--confirm-delete DELETE_JULES_SESSION`
+- `close-merged-session`: `--confirm-close CLOSE_MERGED_SESSION`
 
 ## Credential Setup
 
