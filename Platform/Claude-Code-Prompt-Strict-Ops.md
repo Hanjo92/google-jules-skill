@@ -15,7 +15,7 @@ Rules:
 - Use `--scope-note` and `--non-goal` when extra boundaries matter.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing communication.
 - Check `gh-auth-check --compact` before merge-aware cleanup.
-- Never delete or close a Jules session without explicit user confirmation.
+- Never close, cancel, or delete a Jules session without explicit user confirmation.
 - Summarize long JSON outputs into concise operational messages.
 
 Sequence:
@@ -41,7 +41,7 @@ Rules:
 - Use `--scope-note` and `--non-goal` when extra boundaries matter.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing communication.
 - Check `gh-auth-check --compact` before merge-aware cleanup.
-- Never delete or close a Jules session without explicit user confirmation.
+- Never close, cancel, or delete a Jules session without explicit user confirmation.
 - Summarize long JSON outputs into concise operational messages.
 
 Sequence:

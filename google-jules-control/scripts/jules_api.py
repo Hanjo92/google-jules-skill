@@ -26,6 +26,7 @@ TERMINAL_STATES = {"FAILED", "COMPLETED"}
 OPEN_STATES = ACTIVE_STATES | WAITING_STATES
 PR_URL_RE = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+")
 CLOSE_CONFIRM_TOKEN = "CLOSE_MERGED_SESSION"
+DELETE_CONFIRM_TOKEN = "DELETE_JULES_SESSION"
 SUCCESSFUL_CHECK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 FAILED_CHECK_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED", "STALE"}
 PENDING_CHECK_STATUSES = {"EXPECTED", "IN_PROGRESS", "PENDING", "QUEUED", "REQUESTED", "WAITING"}
@@ -1024,6 +1025,11 @@ def list_sessions(args: argparse.Namespace) -> None:
 
 def delete_session(args: argparse.Namespace) -> None:
     session_name = normalize_session_name(args.session)
+    if args.confirm_delete != DELETE_CONFIRM_TOKEN:
+        fail(
+            "Session deletion is irreversible and is not a pause. "
+            f"Re-run with --confirm-delete {DELETE_CONFIRM_TOKEN} after explicit user approval."
+        )
     api_request("DELETE", f"/{session_name}")
     print(json.dumps({"ok": True, "deleted": session_name}, ensure_ascii=False))
 
@@ -1793,6 +1799,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     delete_session_parser = subparsers.add_parser("delete-session", help="Delete a Jules session.")
     delete_session_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
+    delete_session_parser.add_argument(
+        "--confirm-delete",
+        help=f"Required safety token. Must be exactly {DELETE_CONFIRM_TOKEN}.",
+    )
     delete_session_parser.set_defaults(func=delete_session)
 
     cancel_session_parser = subparsers.add_parser(
@@ -1800,6 +1810,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete a Jules session as a cancel-style action. This is permanent.",
     )
     cancel_session_parser.add_argument("--session", required=True, help="Session id or sessions/<id> resource name.")
+    cancel_session_parser.add_argument(
+        "--confirm-delete",
+        help=f"Required safety token. Must be exactly {DELETE_CONFIRM_TOKEN}.",
+    )
     cancel_session_parser.set_defaults(func=delete_session)
 
     get_session_parser = subparsers.add_parser("get-session", help="Fetch one Jules session.")

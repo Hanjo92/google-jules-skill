@@ -16,7 +16,7 @@ When working with Google Jules:
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
 - Use `summary`, `cleanup-report`, `close-ready-report`, and `notify-close-plan --markdown` to keep users informed.
-- Never close or delete a Jules session without explicit user confirmation.
+- Never close, cancel, or delete a Jules session without explicit user confirmation.
 - Before merge-aware cleanup actions, verify GitHub auth with `gh-auth-check --compact`.
 - Summarize long JSON outputs into concise user-facing updates.
 
@@ -44,7 +44,7 @@ When working with Google Jules:
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
 - Use `summary`, `cleanup-report`, `close-ready-report`, and `notify-close-plan --markdown` to keep users informed.
-- Never close or delete a Jules session without explicit user confirmation.
+- Never close, cancel, or delete a Jules session without explicit user confirmation.
 - Before merge-aware cleanup actions, verify GitHub auth with `gh-auth-check --compact`.
 - Summarize long JSON outputs into concise user-facing updates.
 

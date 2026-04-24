@@ -239,6 +239,41 @@ class JulesApiTests(unittest.TestCase):
 
         self.assertEqual(1, api_request.call_count)
 
+    def test_delete_session_requires_explicit_confirmation_token(self) -> None:
+        args = argparse.Namespace(session="sessions/123", confirm_delete=None)
+
+        with mock.patch.object(jules_api, "api_request") as api_request:
+            with redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaises(SystemExit):
+                    jules_api.delete_session(args)
+
+        self.assertEqual(0, api_request.call_count)
+        self.assertIn("DELETE_JULES_SESSION", stderr.getvalue())
+
+    def test_delete_session_allows_explicit_confirmation_token(self) -> None:
+        args = argparse.Namespace(session="sessions/123", confirm_delete="DELETE_JULES_SESSION")
+
+        with mock.patch.object(jules_api, "api_request", return_value={}) as api_request:
+            with redirect_stdout(io.StringIO()):
+                jules_api.delete_session(args)
+
+        api_request.assert_called_once_with("DELETE", "/sessions/123")
+
+    def test_delete_session_parser_accepts_confirmation_token(self) -> None:
+        parser = jules_api.build_parser()
+
+        args = parser.parse_args(
+            [
+                "delete-session",
+                "--session",
+                "sessions/123",
+                "--confirm-delete",
+                "DELETE_JULES_SESSION",
+            ]
+        )
+
+        self.assertEqual("DELETE_JULES_SESSION", args.confirm_delete)
+
     def test_doctor_reports_api_ready_without_merge_ready(self) -> None:
         args = argparse.Namespace(compact=True)
         output = io.StringIO()

@@ -84,8 +84,13 @@ python3 google-jules-control/scripts/jules_api.py summary --session sessions/SES
 
 5. 테스트 세션 정리 / Clean up the test session
 
+이 단계는 되돌릴 수 없는 세션 삭제입니다. 테스트 세션을 삭제해도 된다고 확인한 뒤 실행합니다.
+This is irreversible session deletion. Run it only after confirming the test session can be deleted.
+
 ```bash
-python3 google-jules-control/scripts/jules_api.py delete-session --session sessions/SESSION_ID
+python3 google-jules-control/scripts/jules_api.py delete-session \
+  --session sessions/SESSION_ID \
+  --confirm-delete DELETE_JULES_SESSION
 ```
 
 ## 자주 쓰는 명령 / Common Commands
