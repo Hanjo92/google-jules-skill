@@ -20,7 +20,7 @@ The command examples in this file assume your shell is in the skill root (`googl
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
    - CLI path: run `jules remote list --repo` or use `jules remote new --repo .` from the repo root.
-3. Create a session with a concrete prompt and branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
+3. Create a session with a concrete prompt and starting branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
 4. Poll session state or activities until Jules requests approval, feedback, or completes.
 5. If the session enters `AWAITING_PLAN_APPROVAL`, review the latest plan against the original task, strict-scope rules, `--scope-note`, and `--non-goal` before approving it.
 6. If needed, inspect open sessions with `list-active-sessions`.
@@ -125,6 +125,18 @@ Notes:
 - `doctor --compact` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`.
 - `api_key=yes` only means the key is present. Use `doctor --compact --validate-api` when you need to prove that the key can authenticate.
 - Aggregated list/report commands collect all pages by default. `--page-token` is a starting point for aggregation, not a single-page mode.
+
+### Branch and PR creation choices
+
+`create-session --branch` maps to Jules API `sourceContext.githubRepoContext.startingBranch`. It is the remote branch Jules starts from in the connected GitHub repository, not a local checkout path.
+
+Choose the branch before creating the session:
+
+- Default branch: use the repository default branch when starting ordinary new work. If the user does not name a branch, check it first, for example `gh repo view owner/repo --json defaultBranchRef -q .defaultBranchRef.name`. Some repositories use `trunk`, `develop`, or `master` instead of `main`.
+- Release branch: use a branch such as `release/1.4` only when the requested fix must target that release line. State the release boundary in `--scope-note`.
+- Existing feature branch: use an existing remote branch such as `feature/login-redirect` only when the user wants Jules to continue that branch. Confirm the branch is pushed, tell Jules to preserve the existing branch intent, and avoid unrelated cleanup that could collide with in-flight work.
+
+`--automation-mode AUTO_CREATE_PR` asks Jules to create a pull request automatically when the session produces changes. Enable it only when the user wants Jules to open a PR as part of the run and the target branch is clear. Omit it for investigation, smoke tests, plan-only sessions, existing PR rework, or cases where you want to inspect/pull the work before deciding whether to open a PR.
 
 ### CLI workflow
 
@@ -481,6 +493,8 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Prefer the CLI for human-driven terminal workflows, quick repo inference from the current directory, or pulling a completed patch into the local checkout.
 - Use `summary` or `list-activities` before responding so the user gets the latest agent-visible state, not just the initial session creation response.
 - Treat Jules as asynchronous. After `create-session`, `send-message`, or `approve-plan`, poll for updated activities instead of assuming immediate textual output.
+- Treat `create-session --branch` as the remote starting branch for Jules' work. Check the default branch when the user does not specify one.
+- Use `--automation-mode AUTO_CREATE_PR` only when automatic PR creation is an intended side effect.
 - Prompts sent through the API helper are strict-scope by default. Use that default unless there is a clear reason to opt out.
 - Treat strict-scope as both a simplicity rule and a surgical-change rule: minimum necessary patch, minimum necessary blast radius.
 - If the user gives only an owner/repo pair and not a Jules source resource name, resolve it with `list-sources` first.
