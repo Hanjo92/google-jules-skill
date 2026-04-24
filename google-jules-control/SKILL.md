@@ -13,6 +13,7 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
    - API path: put `JULES_API_KEY` in a `.env` file from `https://jules.google.com/settings`.
    - CLI path: install `@google/jules`, then run `jules login`.
    - API/CLI health check: run `python3 scripts/jules_api.py doctor --compact`.
+   - API credential validation: run `python3 scripts/jules_api.py doctor --compact --validate-api`.
    - Merge-aware reporting health check: run `python3 scripts/jules_api.py gh-auth-check --compact`.
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
@@ -115,7 +116,8 @@ python3 scripts/jules_api.py summary --session sessions/1234567890
 
 Notes:
 
-- `doctor --compact` now separates `api_ready`, `cli_ready`, and `merge_ready`.
+- `doctor --compact` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`.
+- `api_key=yes` only means the key is present. Use `doctor --compact --validate-api` when you need to prove that the key can authenticate.
 - Aggregated list/report commands collect all pages by default. `--page-token` is a starting point for aggregation, not a single-page mode.
 
 ### CLI workflow
@@ -474,7 +476,7 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Use `close-ready-report` when the user wants close candidates plus ready-made close confirmation text in one step.
 - Prefer `--markdown` for human review and `--compact` for scripting or automation chaining.
 - Prefer a local `.env` file over shell profile edits for `JULES_API_KEY`. The script auto-loads `.env` from the current working directory or the skill root.
-- Use `doctor` before the first live run to verify `.env`, `JULES_API_KEY`, `gh`, and `jules` CLI readiness in one place.
+- Use `doctor` before the first live run to inspect `.env`, `JULES_API_KEY`, `gh`, and `jules` CLI readiness in one place. Add `--validate-api` when API credential validity matters.
 - Use `repo-to-source` when the user gives only `owner/repo` and you need the exact Jules source resource name.
 - Use `check-pr-readiness` before cleanup when you need to know whether a PR is actually merge-ready, not just merged or open.
 - Use `request-pr-rework` when GitHub reports blockers such as merge conflicts, failed checks, or requested changes and you want a follow-up message for Jules.

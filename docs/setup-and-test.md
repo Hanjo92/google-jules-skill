@@ -28,19 +28,23 @@ The script checks the current working directory first, then the skill root.
 
 ```bash
 python3 google-jules-control/scripts/jules_api.py doctor --compact
+python3 google-jules-control/scripts/jules_api.py doctor --compact --validate-api
 ```
 
-정상 예시 / Healthy example:
+검증 포함 정상 예시 / Healthy example with API validation:
 
 ```text
-dotenv=yes api_key=yes api_ready=yes gh=yes gh_auth=yes merge_ready=yes jules_cli=no jules_cli_auth=not_installed cli_ready=no ready=yes
+dotenv=yes api_key=yes api_validated=yes api_status=ok api_ready=yes gh=yes gh_auth=yes merge_ready=yes jules_cli=no jules_cli_auth=not_installed cli_ready=no ready=yes
 ```
 
 REST API만 쓴다면 `jules_cli=no`는 문제 아닙니다.  
 `jules_cli=no` is acceptable if you only use the REST API path.
 
-`api_ready=yes`는 API helper가 바로 실행 가능한 상태를 뜻합니다.  
-`api_ready=yes` means the REST API helper can run.
+기본 `doctor --compact`는 네트워크 API 호출을 하지 않습니다. 이 경우 `api_key=yes`는 키가 있다는 뜻이고, `api_ready=yes`는 아닙니다.
+Plain `doctor --compact` does not make a network API call. In that mode, `api_key=yes` means the key is present, not that `api_ready=yes`.
+
+`api_ready=yes`는 `--validate-api` probe가 성공해서 현재 키로 Jules API 인증이 확인됐다는 뜻입니다.
+`api_ready=yes` means the `--validate-api` probe succeeded and the current key authenticated with the Jules API.
 
 `cli_ready=yes`는 Jules CLI 경로도 바로 쓸 수 있다는 뜻입니다.  
 `cli_ready=yes` means the Jules CLI path is also ready to use.
@@ -127,8 +131,8 @@ python3 google-jules-control/scripts/jules_api.py stale-session-report --repo-fi
 
 - `ready=no`: `doctor`를 `--compact` 없이 실행해서 어떤 항목이 비었는지 확인합니다.  
   Run `doctor` without `--compact` to see the missing dependency.
-- `api_ready=no`: `.env`와 `JULES_API_KEY`를 먼저 점검합니다.  
-  Check `.env` and `JULES_API_KEY` first.
+- `api_ready=no`: `api_key`, `api_validated`, `api_status`를 함께 봅니다. 검증이 필요하면 `doctor --compact --validate-api`를 실행합니다.
+  Check `api_key`, `api_validated`, and `api_status` together. Run `doctor --compact --validate-api` when you need credential validation.
 - `cli_ready=no`: CLI 경로를 쓰려면 `jules login` 또는 CLI 인증 상태를 확인합니다.  
   If you want the CLI path, check `jules login` or the CLI authentication state.
 - `merge_ready=no`: merge 기반 리포트 전에 `gh auth status`를 확인합니다.  

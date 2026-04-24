@@ -49,6 +49,13 @@ google-jules-skill/
 python3 google-jules-control/scripts/jules_api.py doctor --compact
 ```
 
+키가 실제 API 인증까지 통과하는지 확인하려면 아래처럼 검증 probe를 추가합니다.
+Add the validation probe when you need to confirm that the key authenticates with the API.
+
+```bash
+python3 google-jules-control/scripts/jules_api.py doctor --compact --validate-api
+```
+
 4. 저장소를 Jules source로 해석합니다.  
    Resolve a repository to a Jules source.
 

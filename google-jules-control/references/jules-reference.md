@@ -95,6 +95,7 @@ The Jules REST API does not expose GitHub merge state directly. To close a sessi
 The bundled `jules_api.py` script automates this with:
 
 - `doctor --compact`
+- `doctor --compact --validate-api`
 - `gh-auth-check --compact`
 - `repo-to-source --repo owner/repo --compact`
 - `cleanup-report --repo-filter owner/repo --require-all-merged`
@@ -115,7 +116,7 @@ Implementation detail:
 - Merge readiness is checked through `gh pr view <url> --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,...`.
 - If `gh` is missing or unauthenticated, merge status falls back to `unknown` and close should not proceed automatically.
 - `gh-auth-check` is the fast preflight check before any merge-aware report.
-- `doctor` separates `api_ready`, `cli_ready`, and `merge_ready`. `ready=yes` means at least one control path is available.
+- `doctor` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`. Without `--validate-api`, `api_key=yes` only means the key is present. With `--validate-api`, `api_ready=yes` means the API probe authenticated successfully. `ready=yes` means at least one validated control path is available.
 - `close-ready-report` distinguishes between `candidates` and `cautionCandidates`. Treat caution entries as manual-review items, not automatic close targets.
 - `close-merged-session` refuses `caution` sessions by default. Only use `--allow-caution-close` after explicit user approval.
 
