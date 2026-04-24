@@ -28,6 +28,16 @@ python3 google-jules-control/scripts/jules_api.py create-session ...
 python3 google-jules-control/scripts/jules_api.py summary --session sessions/SESSION_ID
 ```
 
+### Setup checks와 완료 기준
+
+- `$google-jules-control` 또는 `google-jules-control/SKILL.md`가 Codex 컨텍스트에서 발견되는지 확인
+- Codex shell에서 `doctor --compact`가 `.env`와 `JULES_API_KEY`를 읽는지 확인. 통과 기준은 `dotenv=yes api_key=yes api_ready=yes`
+- long-running 세션은 `wait` 또는 반복 `summary`로 상태를 갱신
+- 사용자 보고에는 `cleanup-report --markdown`, `close-ready-report --markdown`, `notify-close-plan --markdown` 사용
+- 구조화된 결과가 필요할 때만 JSON 원문이나 `export --output` 사용
+
+완료 기준: Codex가 source 해석, 세션 생성, 세션 요약, markdown 보고를 사용자에게 간결하게 전달하고, JSON 원문이나 `export --output`은 구조화/보관 용도로만 사용할 수 있어야 합니다.
+
 ## EN
 
 ### Current Reference Platform
@@ -55,3 +65,13 @@ python3 google-jules-control/scripts/jules_api.py repo-to-source --repo owner/re
 python3 google-jules-control/scripts/jules_api.py create-session ...
 python3 google-jules-control/scripts/jules_api.py summary --session sessions/SESSION_ID
 ```
+
+### Setup Checks And Done Criteria
+
+- Confirm `$google-jules-control` or `google-jules-control/SKILL.md` is discoverable in the Codex context
+- Confirm Codex shell execution can read `.env` and `JULES_API_KEY` with `doctor --compact`; pass only when it includes `dotenv=yes api_key=yes api_ready=yes`
+- Monitor long-running sessions with `wait` or repeated `summary`
+- Use `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing reports
+- Use raw JSON or `export --output` only when structured output is needed
+
+Done criteria: Codex can resolve a source, create a session, summarize the session, present markdown reports concisely, and reserve raw JSON or `export --output` for structured or archival use.
