@@ -18,7 +18,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-DEFAULT_BASE_URL = os.environ.get("JULES_API_BASE_URL", "https://jules.googleapis.com/v1alpha")
+DEFAULT_BASE_URL = "https://jules.googleapis.com/v1alpha"
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
 DEFAULT_TIMEOUT_SECONDS = 60 * 20
 ACTIVE_STATES = {"QUEUED", "PLANNING", "IN_PROGRESS", "PAUSED"}
 WAITING_STATES = {"AWAITING_PLAN_APPROVAL", "AWAITING_USER_FEEDBACK"}
@@ -186,7 +187,8 @@ def build_prompt_from_args(
 
 def build_url(path: str, query: dict[str, Any] | None = None) -> str:
     path = path if path.startswith("/") else f"/{path}"
-    url = f"{DEFAULT_BASE_URL}{path}"
+    base_url = os.environ.get("JULES_API_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+    url = f"{base_url.rstrip('/')}{path}"
     if query:
         filtered = {key: value for key, value in query.items() if value not in (None, "", False)}
         if filtered:
@@ -205,7 +207,7 @@ def api_request(method: str, path: str, *, payload: dict[str, Any] | None = None
         data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(build_url(path, query), data=data, headers=headers, method=method.upper())
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS) as response:
             raw = response.read().decode("utf-8").strip()
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace").strip()
@@ -215,7 +217,10 @@ def api_request(method: str, path: str, *, payload: dict[str, Any] | None = None
 
     if not raw:
         return {}
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        fail("Jules API request returned non-JSON data. Check the API endpoint, credentials, and network/proxy settings.")
 
 
 def build_api_error_message(status_code: int, raw_body: str) -> str:
@@ -543,17 +548,30 @@ def collect_status_check_blockers(checks: Any) -> list[str]:
         name = check.get("name") or check.get("context") or "status-check"
         status = normalize_gh_state(check.get("status"))
         conclusion = normalize_gh_state(check.get("conclusion"))
+        state = normalize_gh_state(check.get("state"))
+        signals = [signal for signal in [conclusion, state, status] if signal]
 
-        if conclusion in FAILED_CHECK_CONCLUSIONS:
-            blockers.append(f"{name}={conclusion}")
+        failed_signal = next((signal for signal in signals if signal in FAILED_CHECK_CONCLUSIONS), None)
+        if failed_signal:
+            blockers.append(f"{name}={failed_signal}")
             continue
 
-        if status in PENDING_CHECK_STATUSES:
-            blockers.append(f"{name}={status}")
+        pending_signal = next((signal for signal in signals if signal in PENDING_CHECK_STATUSES), None)
+        if pending_signal:
+            blockers.append(f"{name}={pending_signal}")
             continue
 
         if status == "COMPLETED" and conclusion not in SUCCESSFUL_CHECK_CONCLUSIONS:
             blockers.append(f"{name}={conclusion or 'UNKNOWN'}")
+            continue
+
+        if any(signal in SUCCESSFUL_CHECK_CONCLUSIONS for signal in signals):
+            continue
+
+        if signals:
+            blockers.append(f"{name}={signals[0]}")
+        else:
+            blockers.append(f"{name}=UNKNOWN")
     return blockers
 
 
@@ -1543,6 +1561,8 @@ def request_pr_rework(args: argparse.Namespace) -> None:
     readiness = [summarize_pr_merge_readiness(pr) for pr in report.get("pullRequests", [])]
     blocked = [item for item in readiness if not item["ready"]]
 
+    if not readiness:
+        fail("No pull request URL was found for this session. Wait for Jules to produce a PR, or inspect the session outputs first.")
     if not blocked:
         fail("All discovered PRs look merge-ready. No rework request message is needed.")
 
