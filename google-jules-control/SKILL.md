@@ -9,6 +9,8 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
 
 ## Quick Start
 
+The command examples in this file assume your shell is in the skill root (`google-jules-control/`). From this skill repository root, prefix script paths with `google-jules-control/`, for example `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
+
 1. Verify one control path is available.
    - API path: put `JULES_API_KEY` in a `.env` file from `https://jules.google.com/settings`.
    - CLI path: install `@google/jules`, then run `jules login`.
@@ -560,7 +562,7 @@ You can start from `.env.example`.
 
 `.gitignore` excludes `.env`, so the real key file is less likely to be committed by accident.
 
-The script auto-loads `.env` from the current working directory first, then from the skill root.
+The script auto-loads `.env` from the current working directory first, then from the skill root. If the current working directory has `.env`, that file must contain `JULES_API_KEY`; the helper does not merge it with the skill-root `.env`.
 
 ## Read More Only When Needed
 
