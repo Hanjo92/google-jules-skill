@@ -15,6 +15,47 @@ SPEC.loader.exec_module(jules_api)
 
 
 class JulesApiTests(unittest.TestCase):
+    class _FakeResponse:
+        def __init__(self, body: str) -> None:
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self.body.encode("utf-8")
+
+    def test_build_url_uses_current_env_base_url(self) -> None:
+        with mock.patch.dict(jules_api.os.environ, {"JULES_API_BASE_URL": "https://example.test/v9"}):
+            url = jules_api.build_url("/sources", {"pageSize": 1})
+
+        self.assertEqual("https://example.test/v9/sources?pageSize=1", url)
+
+    def test_api_request_uses_request_timeout(self) -> None:
+        with mock.patch.dict(jules_api.os.environ, {"JULES_API_KEY": "test-key"}, clear=False):
+            with mock.patch.object(jules_api.urllib.request, "urlopen", return_value=self._FakeResponse("{}")) as urlopen:
+                jules_api.api_request("GET", "/sources")
+
+        self.assertEqual(60, urlopen.call_args.kwargs.get("timeout"))
+
+    def test_api_request_reports_invalid_json_without_traceback(self) -> None:
+        captured: BaseException | None = None
+        stderr = io.StringIO()
+
+        with mock.patch.dict(jules_api.os.environ, {"JULES_API_KEY": "test-key"}, clear=False):
+            with mock.patch.object(jules_api.urllib.request, "urlopen", return_value=self._FakeResponse("not json")):
+                with redirect_stderr(stderr):
+                    try:
+                        jules_api.api_request("GET", "/sources")
+                    except BaseException as exc:
+                        captured = exc
+
+        self.assertIsInstance(captured, SystemExit)
+        self.assertIn("non-JSON", stderr.getvalue())
+
     def test_build_strict_scope_prompt_includes_default_guards(self) -> None:
         prompt = jules_api.build_strict_scope_prompt("Fix the flaky login redirect test.")
 
@@ -124,6 +165,30 @@ class JulesApiTests(unittest.TestCase):
         self.assertIn("Only make the minimum changes required to make the current pull request merge-ready.", payload["prompt"])
         self.assertIn("Avoid dependency updates.", payload["prompt"])
 
+    def test_request_pr_rework_reports_missing_pull_request_output(self) -> None:
+        args = argparse.Namespace(
+            session="123",
+            extra_instruction=None,
+            send=False,
+            markdown=False,
+        )
+        session = {"name": "sessions/123", "title": "No PR", "state": "COMPLETED", "outputs": []}
+        report = {
+            "hasPullRequest": False,
+            "pullRequests": [],
+            "mergedPullRequests": [],
+            "allMerged": False,
+        }
+        stderr = io.StringIO()
+
+        with mock.patch.object(jules_api, "api_request", return_value=session):
+            with mock.patch.object(jules_api, "build_merge_report", return_value=report):
+                with redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit):
+                        jules_api.request_pr_rework(args)
+
+        self.assertIn("No pull request URL", stderr.getvalue())
+
     def test_build_parser_supports_scope_control_flags(self) -> None:
         parser = jules_api.build_parser()
 
@@ -162,6 +227,36 @@ class JulesApiTests(unittest.TestCase):
         summary = jules_api.summarize_pr_merge_readiness(pr)
         self.assertFalse(summary["ready"])
         self.assertIn("ci/test=IN_PROGRESS", summary["blockers"])
+
+    def test_state_only_failed_status_check_is_not_merge_ready(self) -> None:
+        pr = {
+            "status": "not_merged",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": None,
+            "statusCheckRollup": [{"context": "ci/legacy", "state": "FAILURE"}],
+        }
+
+        self.assertFalse(jules_api.is_pr_merge_ready(pr))
+
+        summary = jules_api.summarize_pr_merge_readiness(pr)
+        self.assertFalse(summary["ready"])
+        self.assertIn("ci/legacy=FAILURE", summary["blockers"])
+
+    def test_unknown_status_check_shape_is_not_merge_ready(self) -> None:
+        pr = {
+            "status": "not_merged",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": None,
+            "statusCheckRollup": [{"name": "ci/unknown"}],
+        }
+
+        self.assertFalse(jules_api.is_pr_merge_ready(pr))
+
+        summary = jules_api.summarize_pr_merge_readiness(pr)
+        self.assertFalse(summary["ready"])
+        self.assertIn("ci/unknown=UNKNOWN", summary["blockers"])
 
     def test_merged_pr_readiness_has_no_spurious_blockers(self) -> None:
         pr = {
