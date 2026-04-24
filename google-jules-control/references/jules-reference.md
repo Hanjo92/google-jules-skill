@@ -47,9 +47,10 @@ Important session fields:
 
 Practical note:
 
-- There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan or sending a follow-up message.
+- There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan only after comparing it against the original task, scope notes, non-goals, and strict-scope rules, or by sending a follow-up message.
 - There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action.
 - The public API does not document a reliable remaining-usage or quota-balance endpoint for end users. Handle quota failures explicitly, but do not guess a remaining amount.
+- `AWAITING_PLAN_APPROVAL` is a review gate, not an automatic approval signal. Read the generated plan and compare it with the original task, scope notes, non-goals, and strict-scope rules before calling `approve-plan`.
 
 Activity types to watch:
 
@@ -133,5 +134,6 @@ Pagination contract:
 - `Usage or rate limit exceeded`: retry later, reduce automation frequency, or check the Jules account/project limits. The script will fail clearly instead of estimating remaining usage.
 - No matching source: install/connect the GitHub repository in Jules first, then re-run `list-sources`.
 - Session appears stuck: inspect the latest activities and state before retrying. `AWAITING_PLAN_APPROVAL` and `AWAITING_USER_FEEDBACK` are usually waiting states, not failures.
+- Plan includes unrelated work: do not approve it by default. Send Jules a narrowing instruction or ask the user whether the broader scope is intentional.
 - Need richer repo context: keep the repository `AGENTS.md` current so Jules can infer project-specific conventions.
 - `gh pr view` fails: run `gh auth status` and authenticate the right GitHub account before using merge-status commands.
