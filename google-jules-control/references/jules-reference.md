@@ -39,9 +39,9 @@ Core resources:
 Important session fields:
 
 - `sourceContext.source`: full source resource name such as `sources/github/OWNER/REPO`
-- `sourceContext.githubRepoContext.startingBranch`: required branch name
+- `sourceContext.githubRepoContext.startingBranch`: required branch name. This is the remote branch Jules starts from; it is not a local checkout path.
 - `requirePlanApproval`: if true, execution pauses for approval
-- `automationMode`: `AUTO_CREATE_PR` or omitted
+- `automationMode`: `AUTO_CREATE_PR` or omitted. `AUTO_CREATE_PR` asks Jules to create a pull request automatically when changes are ready.
 - `state`: one of `QUEUED`, `PLANNING`, `AWAITING_PLAN_APPROVAL`, `AWAITING_USER_FEEDBACK`, `IN_PROGRESS`, `PAUSED`, `FAILED`, `COMPLETED`
 - `url`: Jules web URL for the session
 
@@ -50,6 +50,9 @@ Practical note:
 - There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan or sending a follow-up message.
 - There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action.
 - The public API does not document a reliable remaining-usage or quota-balance endpoint for end users. Handle quota failures explicitly, but do not guess a remaining amount.
+- If the user does not specify a branch, check the repository default branch before using `--branch`; not every repository uses `main`.
+- Use an existing feature branch only when the user wants Jules to continue that remote branch, and include scope notes that preserve the branch intent.
+- Omit `AUTO_CREATE_PR` for investigation, smoke tests, plan-only sessions, existing PR rework, or workflows where a human should inspect the output before opening a PR.
 
 Activity types to watch:
 
