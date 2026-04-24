@@ -239,8 +239,8 @@ class JulesApiTests(unittest.TestCase):
 
         self.assertEqual(1, api_request.call_count)
 
-    def test_doctor_reports_api_ready_without_merge_ready(self) -> None:
-        args = argparse.Namespace(compact=True)
+    def test_doctor_reports_api_key_present_without_api_ready_when_not_validated(self) -> None:
+        args = argparse.Namespace(compact=True, validate_api=False)
         output = io.StringIO()
 
         with mock.patch.object(jules_api, "find_dotenv_path", return_value=Path("/tmp/.env")):
@@ -255,10 +255,64 @@ class JulesApiTests(unittest.TestCase):
                             jules_api.doctor(args)
 
         rendered = output.getvalue().strip()
-        self.assertIn("api_ready=yes", rendered)
+        self.assertIn("api_key=yes", rendered)
+        self.assertIn("api_validated=no", rendered)
+        self.assertIn("api_ready=no", rendered)
         self.assertIn("cli_ready=no", rendered)
         self.assertIn("merge_ready=no", rendered)
+        self.assertIn("ready=no", rendered)
+
+    def test_doctor_validate_api_marks_api_ready_after_successful_probe(self) -> None:
+        args = argparse.Namespace(compact=True, validate_api=True)
+        output = io.StringIO()
+
+        with mock.patch.object(jules_api, "find_dotenv_path", return_value=Path("/tmp/.env")):
+            with mock.patch.dict(jules_api.os.environ, {"JULES_API_KEY": "test-key"}, clear=False):
+                with mock.patch.object(jules_api, "collect_gh_auth_status", return_value={"installed": True, "authenticated": False}):
+                    with mock.patch.object(
+                        jules_api,
+                        "collect_jules_cli_status",
+                        return_value={"installed": False, "path": None, "authStatus": "not_installed", "ready": False},
+                    ):
+                        with mock.patch.object(jules_api, "api_request", return_value={"sources": []}) as api_request:
+                            with redirect_stdout(output):
+                                jules_api.doctor(args)
+
+        api_request.assert_called_once_with("GET", "/sources", query={"pageSize": 1})
+        rendered = output.getvalue().strip()
+        self.assertIn("api_validated=yes", rendered)
+        self.assertIn("api_status=ok", rendered)
+        self.assertIn("api_ready=yes", rendered)
         self.assertIn("ready=yes", rendered)
+
+    def test_doctor_validate_api_reports_failed_probe_without_ready(self) -> None:
+        args = argparse.Namespace(compact=True, validate_api=True)
+        output = io.StringIO()
+
+        with mock.patch.object(jules_api, "find_dotenv_path", return_value=Path("/tmp/.env")):
+            with mock.patch.dict(jules_api.os.environ, {"JULES_API_KEY": "test-key"}, clear=False):
+                with mock.patch.object(jules_api, "collect_gh_auth_status", return_value={"installed": True, "authenticated": False}):
+                    with mock.patch.object(
+                        jules_api,
+                        "collect_jules_cli_status",
+                        return_value={"installed": False, "path": None, "authStatus": "not_installed", "ready": False},
+                    ):
+                        with mock.patch.object(jules_api, "api_request", side_effect=SystemExit(1)):
+                            with redirect_stdout(output):
+                                jules_api.doctor(args)
+
+        rendered = output.getvalue().strip()
+        self.assertIn("api_validated=yes", rendered)
+        self.assertIn("api_status=failed", rendered)
+        self.assertIn("api_ready=no", rendered)
+        self.assertIn("ready=no", rendered)
+
+    def test_doctor_parser_supports_api_validation_probe(self) -> None:
+        parser = jules_api.build_parser()
+
+        args = parser.parse_args(["doctor", "--validate-api"])
+
+        self.assertTrue(args.validate_api)
 
     def test_collect_jules_cli_status_marks_authenticated_when_probe_succeeds(self) -> None:
         version_result = mock.Mock(stdout="1.2.3\n", stderr="")

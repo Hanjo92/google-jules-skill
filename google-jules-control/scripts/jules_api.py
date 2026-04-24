@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import io
 import json
 import os
 from pathlib import Path
@@ -420,6 +422,43 @@ def collect_jules_cli_status() -> dict[str, Any]:
             payload["authStatus"] = "unknown"
         payload["authProbeError"] = combined or "Failed to determine Jules CLI authentication state."
         return payload
+
+
+def collect_api_validation_status(*, validate: bool) -> dict[str, Any]:
+    api_key_present = bool(os.environ.get("JULES_API_KEY", "").strip())
+    if not validate:
+        return {
+            "validated": False,
+            "ready": False,
+            "status": "not_checked",
+            "reason": "Run doctor --validate-api to verify Jules API credentials.",
+        }
+    if not api_key_present:
+        return {
+            "validated": True,
+            "ready": False,
+            "status": "missing_key",
+            "reason": "JULES_API_KEY is not set.",
+        }
+
+    stderr = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(stderr):
+            api_request("GET", "/sources", query={"pageSize": 1})
+    except SystemExit as exc:
+        reason = stderr.getvalue().strip() or f"API validation failed with exit code {exc.code}."
+        return {
+            "validated": True,
+            "ready": False,
+            "status": "failed",
+            "reason": reason,
+        }
+
+    return {
+        "validated": True,
+        "ready": True,
+        "status": "ok",
+    }
 
 
 def format_session_line(session: dict[str, Any]) -> str:
@@ -1627,7 +1666,8 @@ def doctor(args: argparse.Namespace) -> None:
     api_key_present = bool(os.environ.get("JULES_API_KEY", "").strip())
     gh_status = collect_gh_auth_status()
     jules_status = collect_jules_cli_status()
-    api_ready = api_key_present
+    api_validation = collect_api_validation_status(validate=args.validate_api)
+    api_ready = bool(api_validation["ready"])
     cli_ready = bool(jules_status.get("ready"))
     merge_ready = bool(gh_status.get("installed") and gh_status.get("authenticated"))
 
@@ -1639,6 +1679,7 @@ def doctor(args: argparse.Namespace) -> None:
         "julesApiKey": {
             "present": api_key_present,
         },
+        "julesApiValidation": api_validation,
         "gh": gh_status,
         "julesCli": jules_status,
         "apiReady": api_ready,
@@ -1654,6 +1695,8 @@ def doctor(args: argparse.Namespace) -> None:
                 [
                     f"dotenv={'yes' if payload['dotenv']['found'] else 'no'}",
                     f"api_key={'yes' if api_key_present else 'no'}",
+                    f"api_validated={'yes' if api_validation['validated'] else 'no'}",
+                    f"api_status={api_validation['status']}",
                     f"api_ready={'yes' if api_ready else 'no'}",
                     f"gh={'yes' if gh_status.get('installed') else 'no'}",
                     f"gh_auth={'yes' if gh_status.get('authenticated') else 'no'}",
@@ -1763,6 +1806,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check .env, API key, gh auth, and Jules CLI readiness in one command.",
     )
     doctor_parser.add_argument("--compact", action="store_true", help="Print a short status line instead of JSON.")
+    doctor_parser.add_argument(
+        "--validate-api",
+        action="store_true",
+        help="Probe the Jules API to verify that the current API key can authenticate.",
+    )
     doctor_parser.set_defaults(func=doctor)
 
     gh_auth_check_parser = subparsers.add_parser(
