@@ -13,6 +13,7 @@ Rules:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are strict-scope by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when extra boundaries matter.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Prefer `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for human review.
 - Run `gh-auth-check --compact` before merge-aware reporting or cleanup.
 - Require explicit user confirmation before any delete-style command or `close-merged-session`.
@@ -39,6 +40,7 @@ Rules:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are strict-scope by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when extra boundaries matter.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Prefer `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for human review.
 - Run `gh-auth-check --compact` before merge-aware reporting or cleanup.
 - Require explicit user confirmation before any delete-style command or `close-merged-session`.

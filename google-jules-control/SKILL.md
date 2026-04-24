@@ -20,7 +20,7 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
    - CLI path: run `jules remote list --repo` or use `jules remote new --repo .` from the repo root.
 3. Create a session with a concrete prompt and branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
 4. Poll session state or activities until Jules requests approval, feedback, or completes.
-5. Approve the latest plan if the session enters `AWAITING_PLAN_APPROVAL`.
+5. If the session enters `AWAITING_PLAN_APPROVAL`, review the latest plan against the original task, strict-scope rules, `--scope-note`, and `--non-goal` before approving it.
 6. If needed, inspect open sessions with `list-active-sessions`.
 7. For completed PR work, verify merge status before closing the Jules session.
 8. Summarize results for the user, including session URL, current state, latest agent message, PR status, and whether the session is safe to close.
@@ -72,6 +72,10 @@ python3 scripts/jules_api.py create-session \
 
 python3 scripts/jules_api.py wait --session sessions/1234567890
 
+python3 scripts/jules_api.py summary --session sessions/1234567890
+
+# Before approving, run a scope review against the original task,
+# --scope-note, --non-goal, and strict-scope rules.
 python3 scripts/jules_api.py approve-plan --session sessions/1234567890
 
 python3 scripts/jules_api.py send-message \
@@ -176,13 +180,30 @@ Approve the current Jules plan and let it continue.
 
 Suggested flow:
 
+Before approving, compare the generated plan with:
+
+- The original user request
+- Any `--scope-note` boundaries
+- Any `--non-goal` exclusions
+- The strict-scope rules that forbid unrelated cleanup, dependency changes, schema changes, broad refactors, or adjacent formatting changes
+
+If the plan drifts outside scope, do not approve it. Ask the user for confirmation or send Jules a follow-up asking for a narrower plan, for example:
+
 ```bash
 python3 scripts/jules_api.py summary --session sessions/SESSION_ID
 python3 scripts/jules_api.py approve-plan --session sessions/SESSION_ID
 python3 scripts/jules_api.py wait --session sessions/SESSION_ID
 ```
 
-Use `resume` instead when you want one helper command that can approve a pending plan automatically:
+```bash
+python3 scripts/jules_api.py send-message \
+  --session sessions/SESSION_ID \
+  --prompt "Revise the plan before execution. Keep it limited to the login redirect test and remove the proposed auth helper refactor." \
+  --scope-note "Only the login redirect path and its direct tests are in scope." \
+  --non-goal "Do not refactor shared auth helpers."
+```
+
+Use `resume` only after the same scope review when you want one helper command that can approve a pending plan automatically:
 
 ```bash
 python3 scripts/jules_api.py resume --session sessions/SESSION_ID
@@ -461,7 +482,8 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Prompts sent through the API helper are strict-scope by default. Use that default unless there is a clear reason to opt out.
 - Treat strict-scope as both a simplicity rule and a surgical-change rule: minimum necessary patch, minimum necessary blast radius.
 - If the user gives only an owner/repo pair and not a Jules source resource name, resolve it with `list-sources` first.
-- If `AWAITING_PLAN_APPROVAL` appears, surface the plan and explicitly approve it only when the user asked to continue or the task clearly implies execution should proceed.
+- If `AWAITING_PLAN_APPROVAL` appears, surface the plan and run a scope review before approval. Approve only when the plan stays within the original request, `--scope-note`, `--non-goal`, and strict-scope rules.
+- If the plan includes scope drift, unrelated cleanup, dependency changes, schema changes, broad refactors, or adjacent formatting changes, do not approve it by default. Ask the user or send Jules a narrowing instruction first.
 - If the session reaches `AWAITING_USER_FEEDBACK`, send a concise clarifying instruction instead of creating a new session.
 - Use `resume` as a convenience helper only. It is not a first-class Jules API verb; it infers the right next step from the session state.
 - Use `--scope-note` when a file area, subsystem, or execution boundary must be stated explicitly.

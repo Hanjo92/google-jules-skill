@@ -86,6 +86,9 @@ python3 google-jules-control/scripts/jules_api.py create-session \
 python3 google-jules-control/scripts/jules_api.py summary --session sessions/SESSION_ID
 ```
 
+`AWAITING_PLAN_APPROVAL` 상태라면 plan이 smoke-test 범위에 머무는지 먼저 확인합니다. 코드 변경, 리팩터링, 의존성 변경이 포함되면 승인하지 않습니다.
+If the session is `AWAITING_PLAN_APPROVAL`, review that the plan stays inside the smoke-test scope before approval. Do not approve plans that include code changes, refactors, or dependency changes.
+
 5. 테스트 세션 정리 / Clean up the test session
 
 이 단계는 되돌릴 수 없는 세션 삭제입니다. 테스트 세션을 삭제해도 된다고 확인한 뒤 실행합니다.
@@ -116,6 +119,9 @@ python3 google-jules-control/scripts/jules_api.py summary --session sessions/SES
 python3 google-jules-control/scripts/jules_api.py resume --session sessions/SESSION_ID --prompt "Continue."
 python3 google-jules-control/scripts/jules_api.py approve-plan --session sessions/SESSION_ID
 ```
+
+`approve-plan`과 `AWAITING_PLAN_APPROVAL` 세션을 승인할 수 있는 `resume`은 plan scope review 후에만 실행합니다.
+Run `approve-plan`, and `resume` when it would approve an `AWAITING_PLAN_APPROVAL` session, only after reviewing the generated plan against the task scope.
 
 정리와 리포트 / Cleanup and reporting:
 
