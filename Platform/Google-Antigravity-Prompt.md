@@ -16,6 +16,7 @@ Operational rules:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Prefer `summary`, `cleanup-report --markdown`, and `close-ready-report --markdown` for human-readable updates.
 - Use `notify-close-plan --markdown` when preparing a user confirmation message before closure.
 - Require explicit user confirmation before running `close-merged-session` or any delete-style command.
@@ -46,6 +47,7 @@ Operational rules:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Prefer `summary`, `cleanup-report --markdown`, and `close-ready-report --markdown` for human-readable updates.
 - Use `notify-close-plan --markdown` when preparing a user confirmation message before closure.
 - Require explicit user confirmation before running `close-merged-session` or any delete-style command.

@@ -52,7 +52,7 @@ Use this document as the shared baseline when adapting the `google-jules-control
 - Keep `google-jules-control/scripts/jules_api.py` as the single source of truth for Jules API control
 - Keep `.env` and `JULES_API_KEY` as the primary auth path
 - Keep merge checks based on `gh`
-- Keep session closure behind explicit user confirmation
+- Keep session close, cancel, and delete actions behind explicit user confirmation
 
 ### Platform Migration Checkpoints
 
@@ -68,7 +68,7 @@ Use this document as the shared baseline when adapting the `google-jules-control
    - support for absolute-path links
    - markdown rendering behavior
 4. Operational safety
-   - user confirmation before deletion
+   - user confirmation before close, cancel, or delete
    - merge-state verification
    - protection against leaking `.env`
 

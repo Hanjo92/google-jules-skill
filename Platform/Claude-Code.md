@@ -24,6 +24,16 @@ Claude Code에서는 이 저장소의 핵심 자산을 “프로젝트 문서 + 
 Use the local project guide at google-jules-control/SKILL.md. Prefer the bundled Jules control script for all Jules operations. Start with doctor, resolve the repo to a Jules source, then continue with session creation or reporting.
 ```
 
+### Setup checks와 완료 기준
+
+- Claude Code 프로젝트 문서나 프롬프트가 `google-jules-control/SKILL.md`를 참조하는지 확인
+- Claude Code shell에서 `doctor --compact`가 `.env`와 `JULES_API_KEY`를 읽는지 확인. 통과 기준은 `dotenv=yes api_key=yes api_ready=yes`
+- long-running 명령은 중간 상태를 `summary`로 요약하고 필요하면 `wait`를 사용
+- 긴 JSON 출력은 사용자에게 그대로 붙이지 말고 핵심 상태만 요약
+- 사용자 검토에는 `--markdown`, 파일 보관이나 자동화에는 `export --output` 사용
+
+완료 기준: Claude Code가 이 문서와 `SKILL.md`만 보고 source 해석, 세션 생성, 세션 요약, markdown/JSON 출력 선택을 수행할 수 있어야 합니다.
+
 ## EN
 
 ### Adaptation Model
@@ -47,3 +57,13 @@ In Claude Code, the safest migration model is to treat this repository as a comb
 ```text
 Use the local project guide at google-jules-control/SKILL.md. Prefer the bundled Jules control script for all Jules operations. Start with doctor, resolve the repo to a Jules source, then continue with session creation or reporting.
 ```
+
+### Setup Checks And Done Criteria
+
+- Confirm Claude Code project docs or prompts point to `google-jules-control/SKILL.md`
+- Confirm Claude Code shell execution can read `.env` and `JULES_API_KEY` with `doctor --compact`; pass only when it includes `dotenv=yes api_key=yes api_ready=yes`
+- Summarize intermediate state for long-running commands with `summary`, and use `wait` when appropriate
+- Do not paste long raw JSON to users; summarize the operational state first
+- Use `--markdown` for human review and `export --output` for archived or automated JSON
+
+Done criteria: Claude Code can use only this guide and `SKILL.md` to resolve a source, create a session, summarize it, and choose markdown versus JSON output correctly.

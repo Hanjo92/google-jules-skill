@@ -15,6 +15,7 @@ When handling Jules-related tasks:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing updates.
 - Before merge-aware cleanup, run `gh-auth-check --compact`.
 - Never close, cancel, or delete a Jules session without explicit user confirmation.
@@ -43,6 +44,7 @@ When handling Jules-related tasks:
 - Prompts sent through `create-session`, `send-message`, `resume`, and `request-pr-rework` are wrapped with a strict-scope contract by default.
 - If the task is ambiguous or appears to require out-of-scope work, ask a clarifying question instead of broadening the task.
 - Use `--scope-note` and `--non-goal` when you need extra task boundaries.
+- Before approving a Jules plan, compare it against the original task, scope notes, non-goals, and strict-scope rules; do not approve scope drift by default.
 - Use `summary`, `cleanup-report --markdown`, `close-ready-report --markdown`, and `notify-close-plan --markdown` for user-facing updates.
 - Before merge-aware cleanup, run `gh-auth-check --compact`.
 - Never close, cancel, or delete a Jules session without explicit user confirmation.

@@ -9,17 +9,20 @@ Use this skill to delegate coding work to Google Jules from an agentic workflow.
 
 ## Quick Start
 
+The command examples in this file assume your shell is in the skill root (`google-jules-control/`). From this skill repository root, prefix script paths with `google-jules-control/`, for example `python3 google-jules-control/scripts/jules_api.py doctor --compact`.
+
 1. Verify one control path is available.
    - API path: put `JULES_API_KEY` in a `.env` file from `https://jules.google.com/settings`.
    - CLI path: install `@google/jules`, then run `jules login`.
    - API/CLI health check: run `python3 scripts/jules_api.py doctor --compact`.
+   - API credential validation: run `python3 scripts/jules_api.py doctor --compact --validate-api`.
    - Merge-aware reporting health check: run `python3 scripts/jules_api.py gh-auth-check --compact`.
 2. Discover the target repository/source.
    - API path: run `python3 scripts/jules_api.py repo-to-source --repo owner/repo --compact` or `python3 scripts/jules_api.py list-sources`.
    - CLI path: run `jules remote list --repo` or use `jules remote new --repo .` from the repo root.
-3. Create a session with a concrete prompt and branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
+3. Create a session with a concrete prompt and starting branch. By default the script wraps the prompt with a strict-scope contract so Jules stays narrow and asks questions when needed.
 4. Poll session state or activities until Jules requests approval, feedback, or completes.
-5. Approve the latest plan if the session enters `AWAITING_PLAN_APPROVAL`.
+5. If the session enters `AWAITING_PLAN_APPROVAL`, review the latest plan against the original task, strict-scope rules, `--scope-note`, and `--non-goal` before approving it.
 6. If needed, inspect open sessions with `list-active-sessions`.
 7. For completed PR work, verify merge status before closing the Jules session.
 8. Summarize results for the user, including session URL, current state, latest agent message, PR status, and whether the session is safe to close.
@@ -71,6 +74,10 @@ python3 scripts/jules_api.py create-session \
 
 python3 scripts/jules_api.py wait --session sessions/1234567890
 
+python3 scripts/jules_api.py summary --session sessions/1234567890
+
+# Before approving, run a scope review against the original task,
+# --scope-note, --non-goal, and strict-scope rules.
 python3 scripts/jules_api.py approve-plan --session sessions/1234567890
 
 python3 scripts/jules_api.py send-message \
@@ -115,8 +122,21 @@ python3 scripts/jules_api.py summary --session sessions/1234567890
 
 Notes:
 
-- `doctor --compact` now separates `api_ready`, `cli_ready`, and `merge_ready`.
+- `doctor --compact` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`.
+- `api_key=yes` only means the key is present. Use `doctor --compact --validate-api` when you need to prove that the key can authenticate.
 - Aggregated list/report commands collect all pages by default. `--page-token` is a starting point for aggregation, not a single-page mode.
+
+### Branch and PR creation choices
+
+`create-session --branch` maps to Jules API `sourceContext.githubRepoContext.startingBranch`. It is the remote branch Jules starts from in the connected GitHub repository, not a local checkout path.
+
+Choose the branch before creating the session:
+
+- Default branch: use the repository default branch when starting ordinary new work. If the user does not name a branch, check it first, for example `gh repo view owner/repo --json defaultBranchRef -q .defaultBranchRef.name`. Some repositories use `trunk`, `develop`, or `master` instead of `main`.
+- Release branch: use a branch such as `release/1.4` only when the requested fix must target that release line. State the release boundary in `--scope-note`.
+- Existing feature branch: use an existing remote branch such as `feature/login-redirect` only when the user wants Jules to continue that branch. Confirm the branch is pushed, tell Jules to preserve the existing branch intent, and avoid unrelated cleanup that could collide with in-flight work.
+
+`--automation-mode AUTO_CREATE_PR` asks Jules to create a pull request automatically when the session produces changes. Enable it only when the user wants Jules to open a PR as part of the run and the target branch is clear. Omit it for investigation, smoke tests, plan-only sessions, existing PR rework, or cases where you want to inspect/pull the work before deciding whether to open a PR.
 
 ### CLI workflow
 
@@ -174,13 +194,30 @@ Approve the current Jules plan and let it continue.
 
 Suggested flow:
 
+Before approving, compare the generated plan with:
+
+- The original user request
+- Any `--scope-note` boundaries
+- Any `--non-goal` exclusions
+- The strict-scope rules that forbid unrelated cleanup, dependency changes, schema changes, broad refactors, or adjacent formatting changes
+
+If the plan drifts outside scope, do not approve it. Ask the user for confirmation or send Jules a follow-up asking for a narrower plan, for example:
+
 ```bash
 python3 scripts/jules_api.py summary --session sessions/SESSION_ID
 python3 scripts/jules_api.py approve-plan --session sessions/SESSION_ID
 python3 scripts/jules_api.py wait --session sessions/SESSION_ID
 ```
 
-Use `resume` instead when you want one helper command that can approve a pending plan automatically:
+```bash
+python3 scripts/jules_api.py send-message \
+  --session sessions/SESSION_ID \
+  --prompt "Revise the plan before execution. Keep it limited to the login redirect test and remove the proposed auth helper refactor." \
+  --scope-note "Only the login redirect path and its direct tests are in scope." \
+  --non-goal "Do not refactor shared auth helpers."
+```
+
+Use `resume` only after the same scope review when you want one helper command that can approve a pending plan automatically:
 
 ```bash
 python3 scripts/jules_api.py resume --session sessions/SESSION_ID
@@ -247,10 +284,15 @@ Suggested flow:
 
 ```bash
 python3 scripts/jules_api.py summary --session sessions/SESSION_ID
-python3 scripts/jules_api.py cancel-session --session sessions/SESSION_ID
 ```
 
-State clearly that this is implemented as session deletion and is not a reversible pause.
+State clearly that cancel is implemented as session deletion and is not a reversible pause. After explicit user confirmation, run:
+
+```bash
+python3 scripts/jules_api.py cancel-session \
+  --session sessions/SESSION_ID \
+  --confirm-delete DELETE_JULES_SESSION
+```
 
 ### Example: Check active sessions and close a merged one safely
 
@@ -451,17 +493,20 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Prefer the CLI for human-driven terminal workflows, quick repo inference from the current directory, or pulling a completed patch into the local checkout.
 - Use `summary` or `list-activities` before responding so the user gets the latest agent-visible state, not just the initial session creation response.
 - Treat Jules as asynchronous. After `create-session`, `send-message`, or `approve-plan`, poll for updated activities instead of assuming immediate textual output.
+- Treat `create-session --branch` as the remote starting branch for Jules' work. Check the default branch when the user does not specify one.
+- Use `--automation-mode AUTO_CREATE_PR` only when automatic PR creation is an intended side effect.
 - Prompts sent through the API helper are strict-scope by default. Use that default unless there is a clear reason to opt out.
 - Treat strict-scope as both a simplicity rule and a surgical-change rule: minimum necessary patch, minimum necessary blast radius.
 - If the user gives only an owner/repo pair and not a Jules source resource name, resolve it with `list-sources` first.
-- If `AWAITING_PLAN_APPROVAL` appears, surface the plan and explicitly approve it only when the user asked to continue or the task clearly implies execution should proceed.
+- If `AWAITING_PLAN_APPROVAL` appears, surface the plan and run a scope review before approval. Approve only when the plan stays within the original request, `--scope-note`, `--non-goal`, and strict-scope rules.
+- If the plan includes scope drift, unrelated cleanup, dependency changes, schema changes, broad refactors, or adjacent formatting changes, do not approve it by default. Ask the user or send Jules a narrowing instruction first.
 - If the session reaches `AWAITING_USER_FEEDBACK`, send a concise clarifying instruction instead of creating a new session.
 - Use `resume` as a convenience helper only. It is not a first-class Jules API verb; it infers the right next step from the session state.
 - Use `--scope-note` when a file area, subsystem, or execution boundary must be stated explicitly.
 - Use `--non-goal` when you need to forbid refactors, cleanup, dependency changes, schema changes, or other adjacent work.
 - If the task is ambiguous, prefer a follow-up question over a broader instruction.
 - Prefer goal-driven follow-ups with explicit verification targets over vague “improve this” style prompts.
-- Treat `cancel-session` as destructive. It maps to session deletion, not a reversible pause.
+- Treat `delete-session` and `cancel-session` as destructive. They map to irreversible session deletion, not a reversible pause, and require explicit user confirmation plus `--confirm-delete DELETE_JULES_SESSION`.
 - For merged-work cleanup, always follow this order: inspect session, verify merged PR status, ask the user, then run `close-merged-session`.
 - Use `--require-all-merged` when the session output contains more than one pull request URL.
 - Use `list-unmerged-sessions` when the user wants a single view of work that is still open on GitHub.
@@ -474,7 +519,7 @@ python3 scripts/jules_api.py close-ready-report --repo-filter owner/repo --requi
 - Use `close-ready-report` when the user wants close candidates plus ready-made close confirmation text in one step.
 - Prefer `--markdown` for human review and `--compact` for scripting or automation chaining.
 - Prefer a local `.env` file over shell profile edits for `JULES_API_KEY`. The script auto-loads `.env` from the current working directory or the skill root.
-- Use `doctor` before the first live run to verify `.env`, `JULES_API_KEY`, `gh`, and `jules` CLI readiness in one place.
+- Use `doctor` before the first live run to inspect `.env`, `JULES_API_KEY`, `gh`, and `jules` CLI readiness in one place. Add `--validate-api` when API credential validity matters.
 - Use `repo-to-source` when the user gives only `owner/repo` and you need the exact Jules source resource name.
 - Use `check-pr-readiness` before cleanup when you need to know whether a PR is actually merge-ready, not just merged or open.
 - Use `request-pr-rework` when GitHub reports blockers such as merge conflicts, failed checks, or requested changes and you want a follow-up message for Jules.
@@ -514,6 +559,11 @@ The bundled script lives at `scripts/jules_api.py` and supports:
 
 Run `python3 scripts/jules_api.py --help` or `python3 scripts/jules_api.py <command> --help` for flags.
 
+Destructive commands intentionally require safety tokens:
+
+- `delete-session` and `cancel-session`: `--confirm-delete DELETE_JULES_SESSION`
+- `close-merged-session`: `--confirm-close CLOSE_MERGED_SESSION`
+
 ## Credential Setup
 
 Create a `.env` file and add:
@@ -526,7 +576,7 @@ You can start from `.env.example`.
 
 `.gitignore` excludes `.env`, so the real key file is less likely to be committed by accident.
 
-The script auto-loads `.env` from the current working directory first, then from the skill root.
+The script auto-loads `.env` from the current working directory first, then from the skill root. If the current working directory has `.env`, that file must contain `JULES_API_KEY`; the helper does not merge it with the skill-root `.env`.
 
 ## Read More Only When Needed
 

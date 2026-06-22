@@ -39,17 +39,21 @@ Core resources:
 Important session fields:
 
 - `sourceContext.source`: full source resource name such as `sources/github/OWNER/REPO`
-- `sourceContext.githubRepoContext.startingBranch`: required branch name
+- `sourceContext.githubRepoContext.startingBranch`: required branch name. This is the remote branch Jules starts from; it is not a local checkout path.
 - `requirePlanApproval`: if true, execution pauses for approval
-- `automationMode`: `AUTO_CREATE_PR` or omitted
+- `automationMode`: `AUTO_CREATE_PR` or omitted. `AUTO_CREATE_PR` asks Jules to create a pull request automatically when changes are ready.
 - `state`: one of `QUEUED`, `PLANNING`, `AWAITING_PLAN_APPROVAL`, `AWAITING_USER_FEEDBACK`, `IN_PROGRESS`, `PAUSED`, `FAILED`, `COMPLETED`
 - `url`: Jules web URL for the session
 
 Practical note:
 
-- There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan or sending a follow-up message.
-- There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action.
+- There is no dedicated REST `resume` endpoint in the current public API. If a session is waiting, resume it by approving a pending plan only after comparing it against the original task, scope notes, non-goals, and strict-scope rules, or by sending a follow-up message.
+- There is no reversible REST `cancel` endpoint distinct from deletion. Deleting the session is the closest cancellation-style action, so `delete-session` and `cancel-session` require `--confirm-delete DELETE_JULES_SESSION` after explicit user confirmation.
 - The public API does not document a reliable remaining-usage or quota-balance endpoint for end users. Handle quota failures explicitly, but do not guess a remaining amount.
+- `AWAITING_PLAN_APPROVAL` is a review gate, not an automatic approval signal. Read the generated plan and compare it with the original task, scope notes, non-goals, and strict-scope rules before calling `approve-plan`.
+- If the user does not specify a branch, check the repository default branch before using `--branch`; not every repository uses `main`.
+- Use an existing feature branch only when the user wants Jules to continue that remote branch, and include scope notes that preserve the branch intent.
+- Omit `AUTO_CREATE_PR` for investigation, smoke tests, plan-only sessions, existing PR rework, or workflows where a human should inspect the output before opening a PR.
 
 Activity types to watch:
 
@@ -95,6 +99,7 @@ The Jules REST API does not expose GitHub merge state directly. To close a sessi
 The bundled `jules_api.py` script automates this with:
 
 - `doctor --compact`
+- `doctor --compact --validate-api`
 - `gh-auth-check --compact`
 - `repo-to-source --repo owner/repo --compact`
 - `cleanup-report --repo-filter owner/repo --require-all-merged`
@@ -107,6 +112,8 @@ The bundled `jules_api.py` script automates this with:
 - `check-pr-readiness --session ...`
 - `request-pr-rework --session ... --markdown`
 - `notify-close-plan --session ... --markdown`
+- `delete-session --session ... --confirm-delete DELETE_JULES_SESSION`
+- `cancel-session --session ... --confirm-delete DELETE_JULES_SESSION`
 - `close-merged-session --session ... --confirm-close CLOSE_MERGED_SESSION`
 
 Implementation detail:
@@ -115,9 +122,10 @@ Implementation detail:
 - Merge readiness is checked through `gh pr view <url> --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,...`.
 - If `gh` is missing or unauthenticated, merge status falls back to `unknown` and close should not proceed automatically.
 - `gh-auth-check` is the fast preflight check before any merge-aware report.
-- `doctor` separates `api_ready`, `cli_ready`, and `merge_ready`. `ready=yes` means at least one control path is available.
+- `doctor` separates `api_key`, `api_validated`, `api_ready`, `cli_ready`, and `merge_ready`. Without `--validate-api`, `api_key=yes` only means the key is present. With `--validate-api`, `api_ready=yes` means the API probe authenticated successfully. `ready=yes` means at least one validated control path is available.
 - `close-ready-report` distinguishes between `candidates` and `cautionCandidates`. Treat caution entries as manual-review items, not automatic close targets.
 - `close-merged-session` refuses `caution` sessions by default. Only use `--allow-caution-close` after explicit user approval.
+- `delete-session` and `cancel-session` refuse to run without the explicit delete token because both are irreversible deletion flows.
 
 Pagination contract:
 
@@ -133,5 +141,6 @@ Pagination contract:
 - `Usage or rate limit exceeded`: retry later, reduce automation frequency, or check the Jules account/project limits. The script will fail clearly instead of estimating remaining usage.
 - No matching source: install/connect the GitHub repository in Jules first, then re-run `list-sources`.
 - Session appears stuck: inspect the latest activities and state before retrying. `AWAITING_PLAN_APPROVAL` and `AWAITING_USER_FEEDBACK` are usually waiting states, not failures.
+- Plan includes unrelated work: do not approve it by default. Send Jules a narrowing instruction or ask the user whether the broader scope is intentional.
 - Need richer repo context: keep the repository `AGENTS.md` current so Jules can infer project-specific conventions.
 - `gh pr view` fails: run `gh auth status` and authenticate the right GitHub account before using merge-status commands.
